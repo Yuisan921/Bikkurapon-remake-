@@ -1,7 +1,9 @@
-"""びっくらポン風カプセルゲームの本体サーバー。
+"""びっくらポン風カプセルゲームの本体サーバー(ノートPC側)。
 
-コイン投入(GPIOまたはテスト用API)を受けると抽選し、結果をブラウザ画面へ
-Socket.IO で通知、当選していればサーボモーターでカプセルを排出する。
+コインセンサー/サーボモーターは XIAO ESP32-C3 側に直結し、ここでは
+コイン投入通知を受けて抽選するだけ。抽選結果(サーボ角度含む)はそのまま
+レスポンスとして返すので、ESP32側はそのレスポンスだけを見てサーボを
+動かすかどうかを判断できる(サーバー→ESP32への逆方向通信は不要)。
 """
 
 import json
@@ -11,7 +13,6 @@ from pathlib import Path
 from flask import Flask, jsonify, render_template, request
 from flask_socketio import SocketIO
 
-from app.hardware import HardwareController
 from app.lottery import Lottery
 
 logging.basicConfig(level=logging.INFO)
@@ -38,22 +39,11 @@ lottery = Lottery(
 )
 
 
-def handle_coin_inserted():
-    logger.info("コイン投入を検知。抽選を実行します。")
-    result = lottery.draw()
-    logger.info("抽選結果: %s (残り %s)", result["name"], result["remaining"])
-    socketio.emit("draw_result", result)
-    if result.get("servo_angle") is not None:
-        hardware.dispense_capsule()
-    socketio.emit("stock_updated", lottery.get_status())
-
-
-hardware = HardwareController(settings, on_coin_inserted=handle_coin_inserted)
-
-
 @app.route("/")
 def index():
-    return render_template("index.html", mock_mode=hardware.is_mock)
+    return render_template(
+        "index.html", show_debug_button=settings.get("show_debug_button", True)
+    )
 
 
 @app.route("/admin")
@@ -63,15 +53,21 @@ def admin():
 
 @app.route("/api/status")
 def api_status():
-    return jsonify({"prizes": lottery.get_status(), "mock_mode": hardware.is_mock})
+    return jsonify({"prizes": lottery.get_status()})
 
 
 @app.route("/api/insert_coin", methods=["POST"])
 def api_insert_coin():
-    if not hardware.is_mock:
-        return jsonify({"error": "実機モードのためテスト投入は無効です"}), 403
-    hardware.simulate_coin_insert()
-    return jsonify({"ok": True})
+    """コイン投入を通知するエンドポイント。
+
+    ブラウザのテストボタンと、XIAO ESP32-C3 のコインセンサーの両方から
+    呼ばれる想定。抽選結果をそのままレスポンスで返す。
+    """
+    result = lottery.draw()
+    logger.info("抽選結果: %s (残り %s)", result["name"], result["remaining"])
+    socketio.emit("draw_result", result)
+    socketio.emit("stock_updated", lottery.get_status())
+    return jsonify(result)
 
 
 @app.route("/api/restock", methods=["POST"])
@@ -98,7 +94,7 @@ def api_set_stock():
 
 def main():
     # 文化祭会場のローカルネットワーク内でのみ動かす前提の小規模キオスクアプリのため、
-    # 開発用サーバーをそのまま使う(systemd等ttyなしで起動されるケースに対応するため
+    # 開発用サーバーをそのまま使う(tty無しで起動されるケースに対応するため
     # allow_unsafe_werkzeug=True を指定)。
     socketio.run(
         app,
