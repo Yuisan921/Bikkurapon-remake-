@@ -1,0 +1,36 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>びっくらポン!</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+</head>
+<body>
+  <div id="stage" class="state-idle">
+    <div id="idle-screen" class="screen">
+      <h1>びっくらポン!</h1>
+      <p>コインを入れてね</p>
+    </div>
+
+    <div id="playing-screen" class="screen hidden">
+      <div class="roulette">
+        <div class="roulette-inner">?</div>
+      </div>
+      <p>抽選中...</p>
+    </div>
+
+    <div id="result-screen" class="screen hidden">
+      <h2 id="result-title"></h2>
+      <p id="result-message"></p>
+    </div>
+  </div>
+
+  {% if mock_mode %}
+  <button id="debug-insert-coin">コインを投入(テスト用)</button>
+  {% endif %}
+
+  <script src="https://cdn.socket.io/4.7.2/socket.io.min.js"></script>
+  <script src="{{ url_for('static', filename='js/main.js') }}"></script>
+</body>
+</html>

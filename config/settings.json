@@ -1,0 +1,10 @@
+{
+  "coin_pin": 17,
+  "servo_pin": 18,
+  "servo_rest_angle": 0,
+  "servo_dispense_angle": 90,
+  "servo_hold_seconds": 1.0,
+  "debounce_ms": 200,
+  "mock_mode": "auto",
+  "port": 5000
+}
