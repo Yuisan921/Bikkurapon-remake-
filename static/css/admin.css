@@ -9,6 +9,11 @@ h1 {
   font-size: 1.5rem;
 }
 
+.hint {
+  font-size: 0.85rem;
+  color: #555;
+}
+
 table {
   width: 100%;
   border-collapse: collapse;
@@ -27,6 +32,10 @@ th {
 input[type="number"] {
   width: 5rem;
   padding: 0.25rem;
+}
+
+.prob-input {
+  width: 4rem;
 }
 
 button {

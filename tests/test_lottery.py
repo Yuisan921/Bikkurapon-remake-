@@ -38,3 +38,27 @@ def test_set_stock_and_restock(lottery):
 def test_unknown_prize_id_raises(lottery):
     with pytest.raises(KeyError):
         lottery.restock("unknown", 1)
+
+
+def test_set_probability_updates_draw_behavior_and_persists(lottery):
+    lottery.set_probability("atari", 0.0)
+    lottery.set_probability("hazure", 1.0)
+
+    result = lottery.draw()
+    assert result["id"] == "hazure"
+
+    # prizes.json にも書き戻されていること
+    saved = json.loads(lottery.prizes_config_path.read_text(encoding="utf-8"))
+    saved_by_id = {p["id"]: p for p in saved}
+    assert saved_by_id["atari"]["probability"] == 0.0
+    assert saved_by_id["hazure"]["probability"] == 1.0
+
+
+def test_set_probability_rejects_negative(lottery):
+    with pytest.raises(ValueError):
+        lottery.set_probability("atari", -0.1)
+
+
+def test_set_probability_unknown_prize_raises(lottery):
+    with pytest.raises(KeyError):
+        lottery.set_probability("unknown", 0.5)
