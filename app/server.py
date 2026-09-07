@@ -11,25 +11,30 @@ ESP32を接続しない場合(開発中など)は、ブラウザの「コイン�
 
 import json
 import logging
-from pathlib import Path
+import shutil
 
 from flask import Flask, jsonify, render_template, request
 from flask_socketio import SocketIO
 
 from app.lottery import Lottery
+from app.paths import BASE_DIR, BUNDLE_DIR
 from app.serial_bridge import SerialBridge, find_serial_port
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-BASE_DIR = Path(__file__).resolve().parent.parent
 CONFIG_DIR = BASE_DIR / "config"
 DATA_DIR = BASE_DIR / "data"
 
+# .exe化した初回起動時は、実行ファイルの隣にconfig/がまだ無いので、
+# 同梱されているデフォルト設定をコピーして作る(以降はここを直接編集できる)
+if not CONFIG_DIR.exists():
+    shutil.copytree(BUNDLE_DIR / "config", CONFIG_DIR)
+
 app = Flask(
     __name__,
-    template_folder=str(BASE_DIR / "templates"),
-    static_folder=str(BASE_DIR / "static"),
+    template_folder=str(BUNDLE_DIR / "templates"),
+    static_folder=str(BUNDLE_DIR / "static"),
 )
 app.config["SECRET_KEY"] = "bikkurapon-remake"
 socketio = SocketIO(app, cors_allowed_origins="*")

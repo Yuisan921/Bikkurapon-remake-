@@ -5,17 +5,23 @@ REM それぞれ別ウィンドウで開く。
 
 cd /d "%~dp0\.."
 
-if not exist venv (
-  echo 初回セットアップ中...
-  python -m venv venv
-  call venv\Scripts\activate.bat
-  pip install -r requirements.txt
-) else (
-  call venv\Scripts\activate.bat
-)
-
 echo サーバーを起動しています...
-start "bikkurapon-server" cmd /c python run.py
+
+if exist dist\bikkurapon.exe (
+  REM .exeビルド済みならPython環境なしでそのまま起動できる
+  start "bikkurapon-server" cmd /c dist\bikkurapon.exe
+) else (
+  REM .exe未ビルドの場合はPythonで直接起動する(開発用)
+  if not exist venv (
+    echo 初回セットアップ中...
+    python -m venv venv
+    call venv\Scripts\activate.bat
+    pip install -r requirements.txt
+  ) else (
+    call venv\Scripts\activate.bat
+  )
+  start "bikkurapon-server" cmd /c python run.py
+)
 
 timeout /t 3 /nobreak > nul
 
