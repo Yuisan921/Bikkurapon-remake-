@@ -34,6 +34,22 @@ WiFi版もレスポンスの中身(サーバー→ESP32への逆方向通信が�
 HTTP経由でJSONをやり取りする点だけが異なります。詳しくは
 `firmware/xiao_esp32c3_wifi_http/xiao_esp32c3_wifi_http.ino` 冒頭のコメントを参照してください。
 
+## カプセル排出機構(CAD)
+
+`cad/capsule_dispenser.scad` に、回転ゲート式のカプセルディスペンサーの
+パラメトリックモデル(OpenSCAD)があります。当たり用・はずれ用(弱景品)で
+同じものを2セット印刷して使う想定です。
+
+- 無料の [OpenSCAD](https://openscad.org/) で開いてください
+- ファイル冒頭の `PART` 変数を `"hopper"` / `"gate_disc"` / `"base"` に切り替えて、
+  それぞれ File > Export > Export as STL でパーツごとに出力します(`"assembly"`
+  は組み立てイメージのプレビュー用で、STL出力の対象ではありません)
+- `capsule_diameter`(カプセル直径)や `servo_*`(サーボの寸法)は実物に
+  合わせて数値を調整してから出力してください
+- FusionなどのCADで外側の筐体(装飾込みの本体ケース)を作る場合は、
+  この機構部分だけOpenSCADでSTLを出力し、そのSTLをメッシュとして
+  Fusion側のプロジェクトに取り込んで組み合わせる形がおすすめです
+
 ## リポジトリの構成
 
 - `run.py` … 起動エントリーポイント
@@ -46,6 +62,8 @@ HTTP経由でJSONをやり取りする点だけが異なります。詳しくは
 - `data/stock.json` … 実行時に自動生成される現在の在庫数(gitignore対象)
 - `firmware/xiao_esp32c3_usb_serial/` … XIAO ESP32-C3用ファームウェア(USB接続版・推奨)
 - `firmware/xiao_esp32c3_wifi_http/` … XIAO ESP32-C3用ファームウェア(WiFi接続版)
+- `cad/capsule_dispenser.scad` … カプセル排出機構のパラメトリックCAD(OpenSCAD)
+- `scripts/` … 当日の起動を1コマンドでまとめて行うスクリプト(Windows/Mac/Linux)
 
 ## 必要なハードウェア
 
