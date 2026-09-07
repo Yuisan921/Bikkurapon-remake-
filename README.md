@@ -70,15 +70,18 @@ HTTP経由でJSONをやり取りする点だけが異なります。詳しくは
 - `app/lottery.py` … 確率抽選と景品在庫の管理
 - `app/serial_bridge.py` … XIAO ESP32-C3とのUSBシリアル通信(コイン投入受信・結果送信)
 - `app/paths.py` … 通常実行/.exe実行(PyInstaller)でのパス解決の切り替え
+- `app/browser_launcher.py` … 起動時に演出画面・管理画面を自動でブラウザに開く処理
 - `bikkurapon.spec` … .exeビルド用のPyInstaller設定
+- `installer/bikkurapon.iss` … Windowsインストーラー用のInno Setup設定
+- `.github/workflows/build-windows.yml` … Windows環境で.exe/インストーラーを自動ビルドするCI
 - `config/prizes.json` … 景品の一覧・当選確率・初期在庫・サーボ角度
-- `config/settings.json` … ポート番号・USBシリアルポート・テスト用ボタンの表示設定
+- `config/settings.json` … ポート番号・USBシリアルポート・ブラウザ自動起動などの設定
 - `templates/`, `static/` … モニター表示画面(`/`)と在庫管理画面(`/admin`)
 - `data/stock.json` … 実行時に自動生成される現在の在庫数(gitignore対象)
 - `firmware/xiao_esp32c3_usb_serial/` … XIAO ESP32-C3用ファームウェア(USB接続版・推奨)
 - `firmware/xiao_esp32c3_wifi_http/` … XIAO ESP32-C3用ファームウェア(WiFi接続版)
 - `cad/capsule_dispenser.scad` … カプセル排出機構のパラメトリックCAD(OpenSCAD)
-- `scripts/` … 当日の起動をまとめて行うスクリプトや.exeビルドスクリプト
+- `scripts/` … 開発用の起動スクリプトや.exeビルドスクリプト(任意、インストーラーを使うなら不要)
 
 ## 必要なハードウェア
 
@@ -99,31 +102,49 @@ HTTP経由でJSONをやり取りする点だけが異なります。詳しくは
 
 ## セットアップ
 
-### ノートPC側 その1: .exeとして使う(Pythonのインストール不要、推奨)
+### ノートPC側 その1: インストーラーを使う(推奨)
 
-文化祭当日にPythonの環境構築なしでダブルクリックだけで起動できるよう、
-[PyInstaller](https://pyinstaller.org/) で単体の実行ファイルにまとめられます。
+Windowsのユーザー名に日本語(ひらがな等の非ASCII文字)が含まれていると、
+バッチファイルやPythonの仮想環境まわりで文字コード関連の不具合が起きる
+ことがあります。それを避けるため、GitHub Actions(クラウド上のWindows環境)
+で自動ビルドした**インストーラー**を配布する仕組みを用意しています。
+インストーラーはユーザー名を含まない `C:\Program Files\Bikkurapon\` に
+インストールするので、この問題を回避できます。
 
-**ビルド(Windows機で1回だけ実行)**
+**入手方法**
+
+1. GitHubリポジトリの [Actions タブ](../../actions/workflows/build-windows.yml) を開く
+2. 一番上(最新)のビルドを開き、Artifacts欄から `BikkurapoSetup` をダウンロードして展開する
+   (`BikkurapoSetup.exe` が入っています)
+3. ビルドがまだ無い/最新化したい場合は "Run workflow" ボタンで手動実行できます
+
+**インストール・実行**
+
+`BikkurapoSetup.exe` を実行してインストールすると、スタートメニューと
+デスクトップに「びっくらポン」のショートカットができます。それをダブル
+クリックするだけで、サーバー起動 → 演出画面(キオスクモード)と管理画面が
+自動でブラウザに開きます(bat不要)。設定は `C:\Program Files\Bikkurapon\config\`
+を直接編集してください。
+
+### ノートPC側 その2: .exeを自分でビルドする(Pythonのインストール不要で動く)
+
+上記のインストーラーが使えない/中身を見たい場合は、[PyInstaller](https://pyinstaller.org/)
+で単体の実行ファイルに自分でビルドすることもできます。
 
 ```
 scripts\build_exe.bat
 ```
 
-`dist\bikkurapon.exe` が生成されます。初回起動時に、exeと同じ場所に
-`config\`(景品・設定)と `data\`(在庫)フォルダが自動的に作られるので、
-以降はそれらを直接編集すれば、exeを作り直さなくても景品や確率を変更できます。
-
-**実行**
-
-`dist\bikkurapon.exe` をダブルクリックするだけで起動します。
-`scripts\start_bikkurapon.bat` は `dist\bikkurapon.exe` があれば
-自動的にそちらを使い、なければ後述のPython実行にフォールバックします。
+`dist\bikkurapon.exe` が生成されます。ダブルクリックすると、サーバー起動
+と同時に演出画面・管理画面が自動でブラウザに開きます。初回起動時に、exeと
+同じ場所に `config\`(景品・設定)と `data\`(在庫)フォルダが自動的に
+作られるので、以降はそれらを直接編集すれば、exeを作り直さなくても景品や
+確率を変更できます。
 
 .exeは**ビルドしたOSでしか動きません**(Windows機でビルドすればWindows用、
-Macでビルドすればmac用)。configやdataの中身以外に依存関係はないので、
-複数のノートPCで使う場合もビルドは1回で、`dist\bikkurapon.exe` ごとコピー
-すれば他のWindows機でもそのまま動きます。
+Macでビルドすればmac用)。ビルド時にも日本語ユーザー名が原因の不具合が
+起きることがあるので、その場合は上記のインストーラー(GitHub Actionsで
+ビルド)を使ってください。
 
 ### ノートPC側 その2: Pythonで直接動かす(開発用)
 
@@ -143,20 +164,26 @@ python run.py
 
 起動後、ブラウザで `http://localhost:5000/` を開くとゲーム画面が表示されます。
 
-### 当日の起動を1コマンドで(起動スクリプト)
+### 演出画面・管理画面の自動起動について
 
-`scripts/` に、サーバー起動から「演出画面(外部モニターにフルスクリーン)」
-「管理画面(ノートPC本体に通常ウィンドウ)」を2つ同時に開くスクリプトを用意しています。
+サーバー(exeまたは `python run.py`)を起動すると、`app/browser_launcher.py`が
+自動で「演出画面(キオスクモード)」と「管理画面(通常ウィンドウ)」の
+2つをブラウザで開きます。手動でブラウザを開く必要はありません。
 
-- Windows: `scripts\start_bikkurapon.bat` をダブルクリック
-- Mac/Linux: `bash scripts/start_bikkurapon.sh`
+- `config/settings.json` の `auto_open_browser` を `false` にすると、この
+  自動起動を無効化できます(手動で `http://localhost:5000/` と `/admin` を
+  開いてください)
+- 演出画面を外部モニターの正しい位置に表示したい場合は、`kiosk_window_position`
+  に `"1920,0"` のような座標(外部モニターの左上座標)を設定してください。
+  ノートPC画面の解像度や、外部モニターをどちら側に拡張しているかによって
+  数値が変わります。分からない場合は空(`null`)のままにして、表示された
+  ウィンドウを手動でモニター間ドラッグしてください
+- Chrome/Chromiumが見つからない場合は既定のブラウザで演出画面だけを開きます
+  (管理画面は手動で `/admin` を開いてください)
 
-スクリプト内の `--window-position=1920,0` は外部モニターの左上座標です。
-ノートPC画面の解像度や、外部モニターをどちら側に拡張しているかによって
-数値を合わせて書き換えてください(分からない場合は、いったんそのまま実行して
-表示されたウィンドウを手動でモニター間ドラッグしてもOKです)。
-Chrome/Chromiumが見つからない場合は自動起動せず、URLをターミナルに表示するので
-手動でブラウザを開いてください。
+開発用に `scripts/start_bikkurapon.bat`(Windows)/ `scripts/start_bikkurapon.sh`
+(Mac/Linux)もありますが、これは環境構築とサーバー起動をするだけのショートカット
+です(ブラウザはサーバー自身が開きます)。
 
 ### XIAO ESP32-C3側(ファームウェア、USB接続版)
 
