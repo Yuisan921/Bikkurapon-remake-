@@ -17,29 +17,48 @@
  *   2セット作れば、抽選結果に応じてどちらか一方のサーボだけを動かす
  *   だけで、必ず対応する景品のカプセルが出てくる構成になる。
  *
+ * 【カプセルを貯める部分(ホッパー)について】
+ *   カプセルをたくさん貯めておく背の高い部分は、3Dプリンタの造形サイズ
+ *   (よくある200x200x170mm機種だと高さがギリギリ/オーバーしがち)に
+ *   左右されないよう、あえて3Dプリントしない設計にしてある。
+ *   代わりに、市販の透明アクリルパイプや、いらないペットボトル・
+ *   クリアな容器などを「throat_adapter」の上の襟(カラー)にはめ込んで使う。
+ *   本物のガチャガチャっぽく中身が見えるのも利点。
+ *
  * 【使い方】
- *   1. 下の PART 変数を "hopper" / "gate_disc" / "base" のいずれかにして
- *      OpenSCADで開き、File > Export > Export as STL でパーツごとに
- *      出力する(1セットにつき hopper x1, gate_disc x1, base x1)
+ *   1. 下の PART 変数を "throat_adapter" / "gate_disc" / "base" のいずれかに
+ *      して OpenSCADで開き、File > Export > Export as STL でパーツごとに
+ *      出力する(1セットにつき throat_adapter x1, gate_disc x1, base x1)
  *   2. 当たり用・はずれ用でそれぞれ同じものを1セットずつ、計2セット印刷する
  *   3. PART を "assembly" にすると組み立てイメージをプレビューできる
  *      (プレビュー用途のみ。これ自体はSTL出力しない)
+ *   4. コンソールに各パーツの高さ・直径が表示されるので、お使いの
+ *      3Dプリンタの造形サイズに収まっているか確認すること
  *
  * 【組み立て】
- *   base(下) → gate_disc(中、サーボホーンで軸に固定) → hopper(上) の順に
- *   重ね、hopperとbaseの4隅をネジ止めしてgate_discを挟み込む。
- *   サーボ本体はbaseの下にできるポケット(servo_pocket)に差し込み、
- *   出力軸をbase中心の穴からgate_disc裏側のホーン受けに固定する。
+ *   base(下) → gate_disc(中、サーボホーンで軸に固定) → throat_adapter(上)
+ *   の順に重ね、throat_adapterとbaseの4隅をネジ止めしてgate_discを
+ *   挟み込む。throat_adapter上部の襟に、アクリルパイプや容器を接着/
+ *   はめ込みで取り付ける。サーボ本体はbaseの下にできるポケット
+ *   (servo_pocket)に差し込み、出力軸をbase中心の穴からgate_disc裏側の
+ *   ホーン受けに固定する。
  *
  * 【注意】
  *   各寸法は目安です。カプセルとサーボは個体差があるので、印刷前に
  *   実物をノギスで測って capsule_diameter や servo_* を調整してください。
  *   特に servo_shaft_offset_x はサーボの型番・メーカーでばらつきが大きい
- *   ので、必ず実測して合わせてください。
+ *   ので、必ず実測して合わせてください。funnel_collar_outer_d も、
+ *   実際に使うアクリルパイプ/容器の内径に合わせて調整すること。
  * ========================================================================== */
 
 // ---- 出力/プレビューするものを選ぶ ----
-PART = "assembly"; // "hopper" / "gate_disc" / "base" / "assembly"
+PART = "assembly"; // "throat_adapter" / "gate_disc" / "base" / "assembly"
+
+// ---- お使いの3Dプリンタの造形サイズ(mm)。ここを実機に合わせておくと
+//      コンソールの判定メッセージが正しく出ます ----
+printer_bed_x = 200;
+printer_bed_y = 200;
+printer_bed_z = 170;
 
 // ---- 基本パラメータ ----
 capsule_diameter = 45;   // カプセル直径(mm)。実測して調整
@@ -61,12 +80,13 @@ servo_shaft_offset_x = 7.8;  // 出力軸中心が本体端(奥行き方向)か�
 servo_horn_boss_d   = 10;    // サーボホーンの受け穴径(目安、実物に合わせて調整)
 servo_horn_screw_d  = 2.2;   // ホーン固定ネジ穴径
 
-// ---- ホッパー(カプセル投入部)----
-hopper_capacity_h    = 90;                     // ホッパー本体(漏斗部分)の高さ
-hopper_top_diameter  = 110;                    // ホッパー上部の開口径
+// ---- のどアダプター(カプセル投入部、3Dプリントするのはここだけ)----
 throat_diameter      = capsule_diameter + 3;   // カプセルが1列に並ぶ「のど」の径
 throat_height        = capsule_diameter * 1.6; // のど部分の高さ(カプセル1〜2個分)
-top_plate_thickness  = 4;                      // ホッパー下端の固定板の厚み
+top_plate_thickness  = 4;                      // アダプター下端の固定板の厚み
+funnel_collar_h        = 18;  // アクリルパイプ/容器を差し込む襟の高さ
+funnel_collar_outer_d  = 70;  // 襟の外径 ※使うパイプ/容器の内径に合わせて調整
+funnel_collar_wall     = 2.4; // 襟の肉厚
 
 // ---- ベース(固定土台)----
 base_thickness = 4;
@@ -100,22 +120,49 @@ module gate_disc() {
 }
 
 // ==========================================================================
-// パーツ: ホッパー(上部固定板 + カプセル投入用の漏斗)
+// パーツ: のどアダプター(上部固定板 + カプセル1列分の「のど」 + 襟)
+//   カプセルを大量に貯める本体(アクリルパイプ/クリアな容器)は別途用意し、
+//   上部の襟(funnel_collar)に接着 or はめ込みで取り付ける。
 // ==========================================================================
-module hopper() {
+module throat_adapter() {
+    throat_outer_d = throat_diameter + funnel_collar_wall*2; // のど部分の外径(壁厚分太い)
+    collar_inner_d = funnel_collar_outer_d - funnel_collar_wall*2; // 襟の内径
+    taper_h = 20; // のどの内径から襟の内径までテーパーで広げる区間の高さ
+    //   ※実際にカプセルを流してみて詰まるようなら taper_h を小さくして
+    //     テーパーを急にする(垂直に近いほど重力で流れやすい)
+
+    z_throat_top = top_plate_thickness + throat_height; // のど上端のZ座標
+    z_taper_top  = z_throat_top + taper_h;               // テーパー上端のZ座標
+
+    echo(str("throat_adapter 全体高さ(mm): ", z_taper_top + funnel_collar_h));
+    echo(str("throat_adapter 外径(mm): ", (disc_radius + 10) * 2));
+
     difference() {
         union() {
             // 下端の固定板(baseとネジ止めしてgate_discを挟み込む)
             cylinder(r = disc_radius + 10, h = top_plate_thickness);
 
-            // カプセルが1個ずつ並ぶ「のど」(ポケット穴の真上に配置)
+            // のど(外壁。内部はこの後くり抜く)
             translate([hole_center_radius, 0, 0])
-                cylinder(d = throat_diameter, h = throat_height + top_plate_thickness);
+                cylinder(d = throat_outer_d, h = throat_height + top_plate_thickness);
 
-            // すり鉢状のホッパー本体(のどの上に乗る)
-            translate([hole_center_radius, 0, throat_height + top_plate_thickness - 0.1])
-                cylinder(d1 = throat_diameter, d2 = hopper_top_diameter, h = hopper_capacity_h);
+            // のど→襟へ広がるテーパー部分(外壁)
+            translate([hole_center_radius, 0, z_throat_top])
+                cylinder(d1 = throat_outer_d, d2 = funnel_collar_outer_d, h = taper_h);
+
+            // アクリルパイプ/容器を差し込む襟(外壁)
+            translate([hole_center_radius, 0, z_taper_top])
+                cylinder(d = funnel_collar_outer_d, h = funnel_collar_h);
         }
+
+        // カプセルの通り道(内部の空洞)。のど部分は一定径、その上は
+        // テーパーで襟の内径まで広がり、襟の内部はそのまま貫通する
+        translate([hole_center_radius, 0, -1])
+            cylinder(d = throat_diameter, h = throat_height + top_plate_thickness + 1);
+        translate([hole_center_radius, 0, z_throat_top - 1])
+            cylinder(d1 = throat_diameter, d2 = collar_inner_d, h = taper_h + 2);
+        translate([hole_center_radius, 0, z_taper_top - 1])
+            cylinder(d = collar_inner_d, h = funnel_collar_h + 2);
 
         // 「のど」の真下、固定板を貫通させてgate_discのポケットに繋げる
         translate([hole_center_radius, 0, -1])
@@ -137,6 +184,9 @@ module hopper() {
 // パーツ: ベース(下部固定板 + 排出シュート + サーボポケット)
 // ==========================================================================
 module base_plate() {
+    echo(str("base 全体高さ(mm、サーボポケット含む): ", base_thickness + servo_body_h));
+    echo(str("base 外径(mm): ", (disc_radius + 10) * 2));
+
     difference() {
         union() {
             cylinder(r = disc_radius + 10, h = base_thickness);
@@ -158,7 +208,7 @@ module base_plate() {
         translate([0, 0, -1])
             cylinder(r = servo_horn_boss_d/2 + print_clearance, h = base_thickness + 2);
 
-        // 取付ネジ穴(4隅、hopperと共通位置)
+        // 取付ネジ穴(4隅、throat_adapterと共通位置)
         for (a = [45, 135, 225, 315])
             rotate([0, 0, a])
                 translate([disc_radius + 4, 0, -1])
@@ -193,17 +243,30 @@ module servo_pocket() {
 }
 
 // ==========================================================================
-// 組み立てプレビュー(確認用。STL出力はhopper/gate_disc/baseを個別に)
+// 組み立てプレビュー(確認用。STL出力は throat_adapter/gate_disc/base を個別に)
 // ==========================================================================
 module assembly_preview() {
     color("SlateGray") base_plate();
     translate([0, 0, base_thickness + print_clearance])
         color("Gold") gate_disc();
     translate([0, 0, base_thickness + disc_thickness + print_clearance*2])
-        color("LightBlue", 0.5) hopper();
+        color("LightBlue", 0.5) throat_adapter();
 }
 
-if (PART == "hopper") hopper();
+// ---- 3Dプリンタの造形サイズに収まっているかの簡易チェック ----
+if (PART == "throat_adapter" || PART == "assembly") {
+    throat_total_h = top_plate_thickness + throat_height + 20 + funnel_collar_h;
+    throat_total_d = (disc_radius + 10) * 2;
+    if (throat_total_h > printer_bed_z)
+        echo(str("*** 警告: throat_adapterの高さ(", throat_total_h,
+                 "mm)がプリンタのZ(", printer_bed_z, "mm)を超えています ***"));
+    if (throat_total_d > min(printer_bed_x, printer_bed_y))
+        echo(str("*** 警告: throat_adapterの直径(", throat_total_d,
+                 "mm)がプリンタのX/Y(", printer_bed_x, "x", printer_bed_y,
+                 "mm)を超えています ***"));
+}
+
+if (PART == "throat_adapter") throat_adapter();
 else if (PART == "gate_disc") gate_disc();
 else if (PART == "base") base_plate();
 else assembly_preview();
