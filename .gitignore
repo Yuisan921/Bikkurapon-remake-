@@ -6,7 +6,8 @@ venv_build/
 data/stock.json
 .DS_Store
 
-# PyInstallerのビルド生成物
+# PyInstaller/Inno Setupのビルド生成物
 /build/
 /dist/
+/dist_installer/
 *.spec.bak

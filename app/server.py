@@ -16,6 +16,7 @@ import shutil
 from flask import Flask, jsonify, render_template, request
 from flask_socketio import SocketIO
 
+from app.browser_launcher import open_windows_after_delay
 from app.lottery import Lottery
 from app.paths import BASE_DIR, BUNDLE_DIR
 from app.serial_bridge import SerialBridge, find_serial_port
@@ -139,13 +140,20 @@ def api_set_stock():
 
 
 def main():
+    port = settings.get("port", 5000)
+
+    # サーバー起動が終わるのを少し待ってから、演出画面(キオスクモード)と
+    # 管理画面を自動でブラウザで開く。config/settings.json の
+    # auto_open_browser を false にすると無効化できる。
+    open_windows_after_delay(f"http://localhost:{port}", settings)
+
     # 文化祭会場のローカルネットワーク内でのみ動かす前提の小規模キオスクアプリのため、
     # 開発用サーバーをそのまま使う(tty無しで起動されるケースに対応するため
     # allow_unsafe_werkzeug=True を指定)。
     socketio.run(
         app,
         host="0.0.0.0",
-        port=settings.get("port", 5000),
+        port=port,
         allow_unsafe_werkzeug=True,
     )
 

@@ -2,5 +2,7 @@
   "port": 5000,
   "show_debug_button": true,
   "serial_port": "auto",
-  "serial_baudrate": 115200
+  "serial_baudrate": 115200,
+  "auto_open_browser": true,
+  "kiosk_window_position": null
 }
