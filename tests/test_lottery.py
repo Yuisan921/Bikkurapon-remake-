@@ -8,8 +8,8 @@ from app.lottery import Lottery
 @pytest.fixture
 def lottery(tmp_path):
     prizes = [
-        {"id": "atari", "name": "当たり", "probability": 1.0, "stock": 2, "servo_angle": 90},
-        {"id": "hazure", "name": "はずれ", "probability": 0.0, "stock": None, "servo_angle": None},
+        {"id": "atari", "name": "当たり", "probability": 1.0, "stock": 2, "hopper": "a"},
+        {"id": "hazure", "name": "はずれ", "probability": 0.0, "stock": None, "hopper": "b"},
     ]
     prizes_path = tmp_path / "prizes.json"
     prizes_path.write_text(json.dumps(prizes), encoding="utf-8")

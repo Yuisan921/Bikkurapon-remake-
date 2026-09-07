@@ -1,8 +1,11 @@
 """XIAO ESP32-C3とのUSBシリアル通信を担当するブリッジ。
 
 ESP32から "COIN" という行を受け取ったらコールバックを呼び、その戻り値
-(サーボ角度、なければNone)に応じて "DISPENSE:<角度>" または "NONE" を
-1行返す。プロトコルはこれだけのシンプルなテキストベース。
+(景品が使うホッパー記号 "a"/"b"、どちらも使わないなら None)に応じて
+"DISPENSE:A" / "DISPENSE:B" または "NONE" を1行返す。
+サーボの角度自体はESP32ファームウェア側の固定値で、サーバーは
+「どちらのホッパーを動かすか」だけを伝える。プロトコルはこれだけの
+シンプルなテキストベース。
 """
 
 import logging
@@ -77,13 +80,13 @@ class SerialBridge:
 
             if line == "COIN":
                 logger.info("USB経由でコイン投入を検知しました。")
-                servo_angle = self.on_coin_inserted()
-                self._respond(servo_angle)
+                hopper = self.on_coin_inserted()
+                self._respond(hopper)
             else:
                 logger.debug("未知のシリアルメッセージ: %s", line)
 
-    def _respond(self, servo_angle):
-        message = "NONE\n" if servo_angle is None else f"DISPENSE:{servo_angle}\n"
+    def _respond(self, hopper):
+        message = "NONE\n" if hopper is None else f"DISPENSE:{hopper.upper()}\n"
         try:
             self._serial.write(message.encode("utf-8"))
         except serial.SerialException as exc:

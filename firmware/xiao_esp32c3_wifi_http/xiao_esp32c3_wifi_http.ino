@@ -1,9 +1,15 @@
 /*
  * びっくらポン ハードウェア担当ファームウェア(Seeed XIAO ESP32-C3用)
  *
+ * 当たり用・はずれ用、それぞれ専用のホッパー(サーボ)を1個ずつ、
+ * 計2個のサーボをこの1枚のESP32で制御する。
+ *
  * コインセンサーの投入を検知したら、ノートPCで動いているFlaskサーバーの
- * /api/insert_coin にPOSTする。レスポンスのJSONに servo_angle が入っていれば
- * (=当選していれば)、その角度までサーボモーターを動かしてカプセルを排出する。
+ * /api/insert_coin にPOSTする。レスポンスのJSONの "hopper" フィールドが
+ * "a" なら当たり用ホッパー、"b" ならはずれ用ホッパーのサーボを動かして
+ * カプセルを排出する。null ならどちらも動かさない。
+ * サーボの角度自体はこのファームウェアの固定値(ホッパーごとの現物合わせ)
+ * で、サーバー側は「どちらのホッパーか」だけを指定する。
  *
  * 必要なライブラリ(Arduino IDEのライブラリマネージャからインストール):
  *   - ESP32Servo (by Kevin Harrington)
@@ -12,7 +18,8 @@
  *
  * 配線例:
  *   - コインセンサー信号線 -> D0(内部プルアップ、投入でLOWになる想定)
- *   - サーボモーター信号線 -> D1
+ *   - 当たり用ホッパーのサーボ信号線 -> D1
+ *   - はずれ用ホッパーのサーボ信号線 -> D2
  */
 
 #include <WiFi.h>
@@ -26,20 +33,31 @@ const char *WIFI_PASSWORD = "your-wifi-password";
 const char *SERVER_URL = "http://192.168.1.100:5000/api/insert_coin";
 
 const int COIN_SENSOR_PIN = D0;
-const int SERVO_PIN = D1;
-const int SERVO_REST_ANGLE = 0;
+
+const int SERVO_A_PIN = D1;   // 当たり用ホッパー
+const int SERVO_B_PIN = D2;   // はずれ用ホッパー
+
+// サーボの角度は個体差が大きいので、実機で組み立てたあとに調整すること
+const int SERVO_A_REST_ANGLE     = 0;
+const int SERVO_A_DISPENSE_ANGLE = 90;
+const int SERVO_B_REST_ANGLE     = 0;
+const int SERVO_B_DISPENSE_ANGLE = 90;
+
 const unsigned long SERVO_HOLD_MS = 1000;
 const unsigned long DEBOUNCE_MS = 300;
 
-Servo capsuleServo;
+Servo servoA;
+Servo servoB;
 unsigned long lastTriggerMs = 0;
 
 void setup() {
   Serial.begin(115200);
   pinMode(COIN_SENSOR_PIN, INPUT_PULLUP);
 
-  capsuleServo.attach(SERVO_PIN);
-  capsuleServo.write(SERVO_REST_ANGLE);
+  servoA.attach(SERVO_A_PIN);
+  servoA.write(SERVO_A_REST_ANGLE);
+  servoB.attach(SERVO_B_PIN);
+  servoB.write(SERVO_B_REST_ANGLE);
 
   connectToWifi();
 }
@@ -114,14 +132,26 @@ void dispenseIfWon(const String &payload) {
     return;
   }
 
-  if (doc["servo_angle"].isNull()) {
-    Serial.println("はずれ: カプセルは排出しません。");
+  if (doc["hopper"].isNull()) {
+    Serial.println("どちらのホッパーも動かしません。");
     return;
   }
 
-  int angle = doc["servo_angle"].as<int>();
-  Serial.printf("当選: サーボを%d度に動かしてカプセルを排出します。\n", angle);
-  capsuleServo.write(angle);
+  const char *hopper = doc["hopper"];
+
+  if (strcmp(hopper, "a") == 0) {
+    Serial.println("当たり: ホッパーAからカプセルを排出します。");
+    dispenseFrom(servoA, SERVO_A_REST_ANGLE, SERVO_A_DISPENSE_ANGLE);
+  } else if (strcmp(hopper, "b") == 0) {
+    Serial.println("はずれ景品: ホッパーBからカプセルを排出します。");
+    dispenseFrom(servoB, SERVO_B_REST_ANGLE, SERVO_B_DISPENSE_ANGLE);
+  } else {
+    Serial.printf("[WARN] 想定外のhopper値: %s\n", hopper);
+  }
+}
+
+void dispenseFrom(Servo &servo, int restAngle, int dispenseAngle) {
+  servo.write(dispenseAngle);
   delay(SERVO_HOLD_MS);
-  capsuleServo.write(SERVO_REST_ANGLE);
+  servo.write(restAngle);
 }
