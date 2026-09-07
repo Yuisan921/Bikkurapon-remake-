@@ -1,23 +1,16 @@
 [
   {
-    "id": "daiatari",
-    "name": "大当たり",
-    "probability": 0.05,
-    "stock": 5,
-    "servo_angle": 90
-  },
-  {
     "id": "atari",
     "name": "当たり",
-    "probability": 0.20,
+    "probability": 0.2,
     "stock": 30,
-    "servo_angle": 45
+    "hopper": "a"
   },
   {
     "id": "hazure",
     "name": "はずれ",
-    "probability": 0.75,
-    "stock": null,
-    "servo_angle": null
+    "probability": 0.8,
+    "stock": 60,
+    "hopper": "b"
   }
 ]

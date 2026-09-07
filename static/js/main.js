@@ -37,12 +37,10 @@ socket.on("draw_result", (result) => {
   setTimeout(() => {
     stage.className = `state-result state-${result.id}`;
     resultTitle.textContent = result.name;
-    if (result.servo_angle !== null && result.remaining === 0) {
+    if (result.remaining === 0) {
       resultMessage.textContent = `${result.name}!(この景品は在庫終了です)`;
-    } else if (result.servo_angle !== null) {
-      resultMessage.textContent = "カプセルが出てくるよ!";
     } else {
-      resultMessage.textContent = "また挑戦してね!";
+      resultMessage.textContent = "カプセルが出てくるよ!";
     }
     showScreen("result");
 
