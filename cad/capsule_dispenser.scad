@@ -26,9 +26,12 @@
  *   本物のガチャガチャっぽく中身が見えるのも利点。
  *
  * 【使い方】
- *   1. 下の PART 変数を "throat_adapter" / "gate_disc" / "base" のいずれかに
- *      して OpenSCADで開き、File > Export > Export as STL でパーツごとに
- *      出力する(1セットにつき throat_adapter x1, gate_disc x1, base x1)
+ *   1. 下の PART 変数を "throat_adapter" / "gate_disc" / "base" /
+ *      "mount_bracket" のいずれかにして OpenSCADで開き、
+ *      File > Export > Export as STL でパーツごとに出力する
+ *      (1セットにつき throat_adapter x1, gate_disc x1, base x1。
+ *      キャビネットをプラダン等の柔らかい板で作る場合は mount_bracket も
+ *      1枚追加で印刷し、baseとプラダンの間に挟む)
  *   2. 当たり用・はずれ用でそれぞれ同じものを1セットずつ、計2セット印刷する
  *   3. PART を "assembly" にすると組み立てイメージをプレビューできる
  *      (プレビュー用途のみ。これ自体はSTL出力しない)
@@ -93,6 +96,10 @@ base_thickness = 4;
 chute_length   = 40;                    // 排出口から外に伸ばすシュートの長さ
 chute_width    = pocket_diameter + 6;   // シュートの幅(排出口の穴より少し広め)
 mount_hole_r   = 1.8; // hopperとbaseを止めるネジの下穴半径(M3タッピング目安)
+
+// ---- 取付補強リング(プラダン等の柔らかい板にネジ止めする際、
+//      base側のネジ穴の力を受け止めて板がヘタるのを防ぐための3Dプリント部品)----
+bracket_thickness = 3;
 
 $fn = 96;
 
@@ -243,6 +250,28 @@ module servo_pocket() {
 }
 
 // ==========================================================================
+// パーツ: 取付補強リング(プラダン等の柔らかい板とbaseの間に挟む)
+//   base_plateと同じ4箇所のネジ穴・中心軸穴を持つだけの単純な円盤。
+//   プラダンの上にこれを両面テープ等で貼り、その上からbaseをネジ止めする
+//   ことで、ネジの力が柔らかい板ではなく硬い樹脂リングにかかるようにする。
+// ==========================================================================
+module mount_bracket() {
+    difference() {
+        cylinder(r = disc_radius + 10, h = bracket_thickness);
+
+        // 中心の軸穴(サーボの出力軸+ホーンが通る逃げ)
+        translate([0, 0, -1])
+            cylinder(r = servo_horn_boss_d/2 + print_clearance, h = bracket_thickness + 2);
+
+        // 取付ネジ穴(4隅、base/throat_adapterと共通位置)
+        for (a = [45, 135, 225, 315])
+            rotate([0, 0, a])
+                translate([disc_radius + 4, 0, -1])
+                    cylinder(r = mount_hole_r, h = bracket_thickness + 2);
+    }
+}
+
+// ==========================================================================
 // 組み立てプレビュー(確認用。STL出力は throat_adapter/gate_disc/base を個別に)
 // ==========================================================================
 module assembly_preview() {
@@ -269,4 +298,5 @@ if (PART == "throat_adapter" || PART == "assembly") {
 if (PART == "throat_adapter") throat_adapter();
 else if (PART == "gate_disc") gate_disc();
 else if (PART == "base") base_plate();
+else if (PART == "mount_bracket") mount_bracket();
 else assembly_preview();
