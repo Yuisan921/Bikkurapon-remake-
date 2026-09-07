@@ -13,12 +13,12 @@ ESP32を接続しない場合(開発中など)は、ブラウザの「コイン�
 
 import json
 import logging
-import shutil
 
 from flask import Flask, jsonify, render_template, request
 from flask_socketio import SocketIO
 
 from app.browser_launcher import open_windows_after_delay
+from app.config_setup import ensure_config_dir
 from app.lottery import Lottery
 from app.paths import BASE_DIR, BUNDLE_DIR
 from app.serial_bridge import SerialBridge, find_serial_port
@@ -30,9 +30,10 @@ CONFIG_DIR = BASE_DIR / "config"
 DATA_DIR = BASE_DIR / "data"
 
 # .exe化した初回起動時は、実行ファイルの隣にconfig/がまだ無いので、
-# 同梱されているデフォルト設定をコピーして作る(以降はここを直接編集できる)
-if not CONFIG_DIR.exists():
-    shutil.copytree(BUNDLE_DIR / "config", CONFIG_DIR)
+# 同梱されているデフォルト設定をコピーして作る(以降はここを直接編集できる)。
+# 既にある場合でも、旧バージョンの景品構成(大当たり等)のままなら
+# 最新の既定値に差し替える(詳細はconfig_setup.pyのコメント参照)。
+ensure_config_dir(CONFIG_DIR, BUNDLE_DIR / "config")
 
 app = Flask(
     __name__,
