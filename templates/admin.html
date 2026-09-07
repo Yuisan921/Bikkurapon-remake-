@@ -1,0 +1,27 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>びっくらポン 管理画面</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/admin.css') }}">
+</head>
+<body>
+  <h1>景品在庫管理</h1>
+  <table id="stock-table">
+    <thead>
+      <tr>
+        <th>景品</th>
+        <th>当選確率</th>
+        <th>残数</th>
+        <th>在庫を更新</th>
+      </tr>
+    </thead>
+    <tbody></tbody>
+  </table>
+  <p><a href="/">&larr; ゲーム画面に戻る</a></p>
+
+  <script src="https://cdn.socket.io/4.7.2/socket.io.min.js"></script>
+  <script src="{{ url_for('static', filename='js/admin.js') }}"></script>
+</body>
+</html>
