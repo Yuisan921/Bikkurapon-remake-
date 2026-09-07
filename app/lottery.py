@@ -34,6 +34,10 @@ class Lottery:
         with open(self.stock_data_path, "w", encoding="utf-8") as f:
             json.dump(stock, f, ensure_ascii=False, indent=2)
 
+    def _write_prizes(self):
+        with open(self.prizes_config_path, "w", encoding="utf-8") as f:
+            json.dump(self._prizes, f, ensure_ascii=False, indent=2)
+
     def get_status(self):
         stock = self._read_stock()
         result = []
@@ -84,3 +88,18 @@ class Lottery:
             stock[prize_id] = max(0, amount)
             self._write_stock(stock)
             return stock[prize_id]
+
+    def set_probability(self, prize_id, probability):
+        """景品の当選確率を変更し、config/prizes.json にも書き戻す(再起動後も
+        反映される)。管理画面から「在庫に合わせて確率を調整する」「テスト用に
+        わざと確率を偏らせる」といった用途で使う想定。
+        """
+        with self._lock:
+            prize = next((p for p in self._prizes if p["id"] == prize_id), None)
+            if prize is None:
+                raise KeyError(f"unknown prize id: {prize_id}")
+            if probability < 0:
+                raise ValueError("probability must be 0 or greater")
+            prize["probability"] = probability
+            self._write_prizes()
+            return prize["probability"]

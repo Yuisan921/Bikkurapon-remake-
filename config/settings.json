@@ -4,5 +4,6 @@
   "serial_port": "auto",
   "serial_baudrate": 115200,
   "auto_open_browser": true,
+  "kiosk_mode": false,
   "kiosk_window_position": null
 }

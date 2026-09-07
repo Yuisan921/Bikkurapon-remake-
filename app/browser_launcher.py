@@ -9,6 +9,7 @@
 import logging
 import shutil
 import subprocess
+import tempfile
 import threading
 import time
 import webbrowser
@@ -37,12 +38,35 @@ def find_chrome():
     return None
 
 
+def _profile_dir(name):
+    """演出画面/管理画面それぞれ専用のChromeプロファイル置き場。
+
+    同じプロファイル(=同じChromeプロセス)を共有すると、Chromeが2つ目
+    以降のウィンドウを「既存プロセスへの新規ウィンドウ要求」として扱い、
+    --kioskや--window-sizeなどのウィンドウ固有フラグを無視したり、
+    片方のフルスクリーン状態がもう片方にも伝染したりすることがある。
+    プロファイルディレクトリを分けることで、2つを完全に別プロセスとして
+    独立させ、それぞれが自分に指定したフラグどおりに開くようにする。
+    """
+    path = Path(tempfile.gettempdir()) / "bikkurapon-chrome-profile" / name
+    path.mkdir(parents=True, exist_ok=True)
+    return str(path)
+
+
 def open_windows(base_url, settings):
-    """演出画面(キオスクモード)と管理画面(通常ウィンドウ)を別々に開く。
+    """演出画面と管理画面を、別々のウィンドウ(別プロセス)として開く。
 
     settings は config/settings.json の内容。auto_open_browser が false なら
-    何もしない。kiosk_window_position("1920,0" のような文字列)が
-    設定されていれば、演出画面をその座標(=外部モニター)に表示する。
+    何もしない。
+
+    - kiosk_mode が true の場合だけ、演出画面を枠なし(タイトルバーなし)の
+      キオスクモードで開く。文化祭当日、外部モニターにフルスクリーン表示
+      する時用。既定は false(普通のウィンドウ)で、これはタイトルバーが
+      あるのでドラッグして動かせる。1台のモニターでテストする時は
+      false のままの方が扱いやすい
+    - kiosk_window_position("1920,0" のような文字列)が設定されていれば、
+      演出画面をその座標(=外部モニター)に表示する。kiosk_mode が false でも
+      通常ウィンドウの初期位置として使われる
     """
     if not settings.get("auto_open_browser", True):
         return
@@ -60,14 +84,31 @@ def open_windows(base_url, settings):
         webbrowser.open(display_url)
         return
 
-    subprocess.Popen([chrome, "--new-window", admin_url])
-
-    kiosk_args = [chrome, "--new-window", "--kiosk"]
+    display_args = [
+        chrome,
+        f"--user-data-dir={_profile_dir('display')}",
+        "--new-window",
+        "--no-first-run",
+    ]
+    if settings.get("kiosk_mode", False):
+        display_args.append("--kiosk")
+    else:
+        display_args.append("--window-size=1000,700")
     position = settings.get("kiosk_window_position")
     if position:
-        kiosk_args.append(f"--window-position={position}")
-    kiosk_args.append(display_url)
-    subprocess.Popen(kiosk_args)
+        display_args.append(f"--window-position={position}")
+    display_args.append(display_url)
+    subprocess.Popen(display_args)
+
+    admin_args = [
+        chrome,
+        f"--user-data-dir={_profile_dir('admin')}",
+        "--new-window",
+        "--no-first-run",
+        "--window-size=900,700",
+        admin_url,
+    ]
+    subprocess.Popen(admin_args)
 
 
 def open_windows_after_delay(base_url, settings, delay_seconds=1.5):

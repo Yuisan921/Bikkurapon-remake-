@@ -141,6 +141,20 @@ def api_set_stock():
     return jsonify({"prize_id": payload["prize_id"], "remaining": remaining})
 
 
+@app.route("/api/set_probability", methods=["POST"])
+def api_set_probability():
+    """景品の当選確率を変更する(config/prizes.jsonにも保存される)。"""
+    payload = request.get_json(force=True)
+    try:
+        probability = lottery.set_probability(payload["prize_id"], float(payload["probability"]))
+    except KeyError as exc:
+        return jsonify({"error": str(exc)}), 404
+    except ValueError as exc:
+        return jsonify({"error": str(exc)}), 400
+    socketio.emit("stock_updated", lottery.get_status())
+    return jsonify({"prize_id": payload["prize_id"], "probability": probability})
+
+
 def main():
     port = settings.get("port", 5000)
 
