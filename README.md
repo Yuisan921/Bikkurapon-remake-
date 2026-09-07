@@ -69,6 +69,8 @@ HTTP経由でJSONをやり取りする点だけが異なります。詳しくは
 - `app/server.py` … Flask + Socket.IO サーバー本体(ノートPCで動かす)
 - `app/lottery.py` … 確率抽選と景品在庫の管理
 - `app/serial_bridge.py` … XIAO ESP32-C3とのUSBシリアル通信(コイン投入受信・結果送信)
+- `app/paths.py` … 通常実行/.exe実行(PyInstaller)でのパス解決の切り替え
+- `bikkurapon.spec` … .exeビルド用のPyInstaller設定
 - `config/prizes.json` … 景品の一覧・当選確率・初期在庫・サーボ角度
 - `config/settings.json` … ポート番号・USBシリアルポート・テスト用ボタンの表示設定
 - `templates/`, `static/` … モニター表示画面(`/`)と在庫管理画面(`/admin`)
@@ -76,7 +78,7 @@ HTTP経由でJSONをやり取りする点だけが異なります。詳しくは
 - `firmware/xiao_esp32c3_usb_serial/` … XIAO ESP32-C3用ファームウェア(USB接続版・推奨)
 - `firmware/xiao_esp32c3_wifi_http/` … XIAO ESP32-C3用ファームウェア(WiFi接続版)
 - `cad/capsule_dispenser.scad` … カプセル排出機構のパラメトリックCAD(OpenSCAD)
-- `scripts/` … 当日の起動を1コマンドでまとめて行うスクリプト(Windows/Mac/Linux)
+- `scripts/` … 当日の起動をまとめて行うスクリプトや.exeビルドスクリプト
 
 ## 必要なハードウェア
 
@@ -97,7 +99,33 @@ HTTP経由でJSONをやり取りする点だけが異なります。詳しくは
 
 ## セットアップ
 
-### ノートPC側(Flaskサーバー)
+### ノートPC側 その1: .exeとして使う(Pythonのインストール不要、推奨)
+
+文化祭当日にPythonの環境構築なしでダブルクリックだけで起動できるよう、
+[PyInstaller](https://pyinstaller.org/) で単体の実行ファイルにまとめられます。
+
+**ビルド(Windows機で1回だけ実行)**
+
+```
+scripts\build_exe.bat
+```
+
+`dist\bikkurapon.exe` が生成されます。初回起動時に、exeと同じ場所に
+`config\`(景品・設定)と `data\`(在庫)フォルダが自動的に作られるので、
+以降はそれらを直接編集すれば、exeを作り直さなくても景品や確率を変更できます。
+
+**実行**
+
+`dist\bikkurapon.exe` をダブルクリックするだけで起動します。
+`scripts\start_bikkurapon.bat` は `dist\bikkurapon.exe` があれば
+自動的にそちらを使い、なければ後述のPython実行にフォールバックします。
+
+.exeは**ビルドしたOSでしか動きません**(Windows機でビルドすればWindows用、
+Macでビルドすればmac用)。configやdataの中身以外に依存関係はないので、
+複数のノートPCで使う場合もビルドは1回で、`dist\bikkurapon.exe` ごとコピー
+すれば他のWindows機でもそのまま動きます。
+
+### ノートPC側 その2: Pythonで直接動かす(開発用)
 
 ```bash
 python3 -m venv venv

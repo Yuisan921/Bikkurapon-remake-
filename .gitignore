@@ -2,5 +2,11 @@ __pycache__/
 *.pyc
 .venv/
 venv/
+venv_build/
 data/stock.json
 .DS_Store
+
+# PyInstallerのビルド生成物
+/build/
+/dist/
+*.spec.bak
