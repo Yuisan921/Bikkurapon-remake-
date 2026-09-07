@@ -7,7 +7,7 @@
  *
  * 必要なライブラリ(Arduino IDEのライブラリマネージャからインストール):
  *   - ESP32Servo (by Kevin Harrington)
- *   - ArduinoJson (by Benoit Blanchon)
+ *   - ArduinoJson 7.x (by Benoit Blanchon)
  * ボード設定: "XIAO_ESP32C3" を選択(esp32 by Espressif Systems のボードパッケージ内)
  *
  * 配線例:
@@ -106,7 +106,7 @@ void handleCoinInserted() {
 }
 
 void dispenseIfWon(const String &payload) {
-  StaticJsonDocument<256> doc;
+  JsonDocument doc;
   DeserializationError err = deserializeJson(doc, payload);
   if (err) {
     Serial.print("JSON解析に失敗しました: ");
