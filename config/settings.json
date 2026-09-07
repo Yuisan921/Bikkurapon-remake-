@@ -1,4 +1,6 @@
 {
   "port": 5000,
-  "show_debug_button": true
+  "show_debug_button": true,
+  "serial_port": "auto",
+  "serial_baudrate": 115200
 }

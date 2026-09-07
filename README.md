@@ -12,35 +12,40 @@
 - **ノートPC**: 抽選ロジックとモニター表示画面を担当(このリポジトリのFlaskアプリ)。
   GPIOなどのハードウェアは一切触らない
 - **Seeed XIAO ESP32-C3**: コインセンサーとカプセル排出用サーボモーターを直結し、
-  コイン投入を検知したらWiFi経由でノートPCに通知するだけの小さなファームウェア
-  (`firmware/xiao_esp32c3_coin_servo/`)を書き込んで使う
+  コイン投入を検知したらノートPCに通知するだけの小さなファームウェアを書き込んで使う
 
-ノートPCとXIAO ESP32-C3は同じWiFiネットワークに接続する必要があります。
-会場のWiFiが使えない/不安定な場合は、ノートPC側でモバイルホットスポットを立てて
-ESP32をそこに接続させるのが手軽です。
+ESP32とノートPCの接続方法は **USBケーブル(推奨)** と **WiFi** の2通りを用意しています。
 
-### 通信の流れ
+| 接続方法 | ファームウェア | 特徴 |
+| --- | --- | --- |
+| USB(推奨) | `firmware/xiao_esp32c3_usb_serial/` | ケーブル1本で完結。会場のWiFi環境に左右されず安定動作 |
+| WiFi | `firmware/xiao_esp32c3_wifi_http/` | ESP32を離れた場所に置きたい場合向け。会場WiFiかノートPCのモバイルホットスポットが必要 |
 
-1. XIAO ESP32-C3がコインセンサーの投入を検知
-2. ノートPCの `POST /api/insert_coin` にHTTPリクエストを送る
-3. ノートPCが抽選を実行し、結果(景品名・サーボ角度など)をレスポンスJSONで返す
-   と同時に、Socket.IOでブラウザ画面にも同じ結果を通知して演出を再生する
-4. ESP32はレスポンスの `servo_angle` を見て、当選していればサーボモーターを動かして
-   カプセルを排出する(はずれの場合は `servo_angle` が `null` なので何もしない)
+### 通信の流れ(USB版)
 
-サーバーからESP32への逆方向通信は発生しないので、ESP32側は待ち受けサーバーを
-立てる必要がなく、ファームウェアがシンプルになっています。
+1. XIAO ESP32-C3がコインセンサーの投入を検知し、USBシリアルで `COIN` という1行を送る
+2. ノートPCがそれを受け取って抽選を実行し、
+   - 当選なら `DISPENSE:<角度>`
+   - はずれなら `NONE`
+   を1行返す。同時にSocket.IOでブラウザ画面にも結果を通知して演出を再生する
+3. ESP32は返ってきた行を見て、当選していればサーボモーターを動かしてカプセルを排出する
+
+WiFi版もレスポンスの中身(サーバー→ESP32への逆方向通信が不要な設計)は同じで、
+HTTP経由でJSONをやり取りする点だけが異なります。詳しくは
+`firmware/xiao_esp32c3_wifi_http/xiao_esp32c3_wifi_http.ino` 冒頭のコメントを参照してください。
 
 ## リポジトリの構成
 
 - `run.py` … 起動エントリーポイント
 - `app/server.py` … Flask + Socket.IO サーバー本体(ノートPCで動かす)
 - `app/lottery.py` … 確率抽選と景品在庫の管理
+- `app/serial_bridge.py` … XIAO ESP32-C3とのUSBシリアル通信(コイン投入受信・結果送信)
 - `config/prizes.json` … 景品の一覧・当選確率・初期在庫・サーボ角度
-- `config/settings.json` … ポート番号やテスト用ボタンの表示設定
+- `config/settings.json` … ポート番号・USBシリアルポート・テスト用ボタンの表示設定
 - `templates/`, `static/` … モニター表示画面(`/`)と在庫管理画面(`/admin`)
 - `data/stock.json` … 実行時に自動生成される現在の在庫数(gitignore対象)
-- `firmware/xiao_esp32c3_coin_servo/` … XIAO ESP32-C3用ファームウェア(Arduino)
+- `firmware/xiao_esp32c3_usb_serial/` … XIAO ESP32-C3用ファームウェア(USB接続版・推奨)
+- `firmware/xiao_esp32c3_wifi_http/` … XIAO ESP32-C3用ファームウェア(WiFi接続版)
 
 ## 必要なハードウェア
 
@@ -50,8 +55,9 @@ ESP32をそこに接続させるのが手軽です。
 - カプセル排出用のサーボモーター(SG90など)
 - カプセル排出機構(3Dプリント/レーザーカットで自作)
 - 外部モニター(ノートPCの画面をそのまま使ってもOK、フルスクリーン表示推奨)
+- USBケーブル(XIAO ESP32-C3をノートPCに接続する用)
 
-### 配線例(XIAO ESP32-C3、`firmware/.../xiao_esp32c3_coin_servo.ino` の初期値)
+### 配線例(XIAO ESP32-C3共通)
 
 | 部品 | ピン |
 | --- | --- |
@@ -69,22 +75,27 @@ pip install -r requirements.txt
 python run.py
 ```
 
+起動時のログに `USBシリアルブリッジを開始しました` と出ていればESP32を自動検出できています。
+出ていない場合はESP32が接続されていないか自動検出に失敗しているので、
+`config/settings.json` の `serial_port` に手動でポート名(例: `/dev/ttyACM0` や `COM3`)を
+指定してください。ESP32を接続しない状態でも、ブラウザの
+「コインを投入(テスト用)」ボタンで動作確認できます(本番当日は
+`show_debug_button` を `false` にして、来場者が誤ってタップできないようにしてください)。
+
 起動後、ブラウザで `http://localhost:5000/` を開くとゲーム画面が表示されます。
-画面右下の「コインを投入(テスト用)」ボタンでESP32なしでも動作確認できます
-(本番当日は `config/settings.json` の `show_debug_button` を `false` にして、
-来場者が誤ってタップできないようにしてください)。
 
-他の端末(ESP32や別PC)からアクセスする場合は `ipconfig`(Windows)/
-`ifconfig`(Mac/Linux)でノートPCのIPアドレスを確認してください。
-
-### XIAO ESP32-C3側(ファームウェア)
+### XIAO ESP32-C3側(ファームウェア、USB接続版)
 
 1. Arduino IDEに以下をインストール
    - ボード: esp32(Espressif Systems)のボードパッケージから `XIAO_ESP32C3` を選択
-   - ライブラリ: `ESP32Servo`、`ArduinoJson`
-2. `firmware/xiao_esp32c3_coin_servo/xiao_esp32c3_coin_servo.ino` を開き、
-   `WIFI_SSID` / `WIFI_PASSWORD` / `SERVER_URL`(ノートPCのIPアドレス)を書き換える
-3. 書き込んでシリアルモニタで接続状況とコイン検知ログを確認する
+   - Tools > USB CDC On Boot を `Enabled` にする(USB経由のシリアル通信に必須)
+   - ライブラリ: `ESP32Servo`
+2. `firmware/xiao_esp32c3_usb_serial/xiao_esp32c3_usb_serial.ino` を書き込む
+   (WIFI設定などは不要。ピン番号を変える場合だけ冒頭の定数を編集)
+3. USBケーブルでノートPCに接続する。シリアルモニタでコイン検知ログを確認できます
+
+WiFi接続版を使う場合は `firmware/xiao_esp32c3_wifi_http/` の手順(ファイル冒頭のコメント)
+に従ってWiFi情報とノートPCのIPアドレスを設定してください。
 
 ## 景品・確率のカスタマイズ
 
