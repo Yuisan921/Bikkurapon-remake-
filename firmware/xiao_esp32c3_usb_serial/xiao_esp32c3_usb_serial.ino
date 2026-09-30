@@ -34,38 +34,44 @@ const int COIN_SENSOR_PIN = D0;
 const int SERVO_A_PIN = D1;   // 当たり用ホッパー
 const int SERVO_B_PIN = D2;   // はずれ用ホッパー
 
-// サーボの角度は個体差が大きいので、実機で組み立てたあとに調整すること
-const int SERVO_A_REST_ANGLE     = 0;
-const int SERVO_A_DISPENSE_ANGLE = 90;
-const int SERVO_B_REST_ANGLE     = 0;
-const int SERVO_B_DISPENSE_ANGLE = 90;
+// 2ポケットローターは0度と180度のどちらでも装填／排出できる。
+// 角度は個体差が大きいので、実機で組み立てたあとに調整すること。
+const int SERVO_A_POSITION_0   = 0;
+const int SERVO_A_POSITION_180 = 180;
+const int SERVO_B_POSITION_0   = 0;
+const int SERVO_B_POSITION_180 = 180;
 
-const unsigned long SERVO_HOLD_MS = 1000;
+const unsigned long SERVO_SETTLE_MS = 1000;
 const unsigned long DEBOUNCE_MS = 300;
 const unsigned long RESPONSE_TIMEOUT_MS = 3000;
 
 Servo servoA;
 Servo servoB;
+bool servoAAt180 = false;
+bool servoBAt180 = false;
 unsigned long lastTriggerMs = 0;
+bool coinWasLow = false;
 
 void setup() {
   Serial.begin(115200);
   pinMode(COIN_SENSOR_PIN, INPUT_PULLUP);
 
   servoA.attach(SERVO_A_PIN);
-  servoA.write(SERVO_A_REST_ANGLE);
+  servoA.write(SERVO_A_POSITION_0);
   servoB.attach(SERVO_B_PIN);
-  servoB.write(SERVO_B_REST_ANGLE);
+  servoB.write(SERVO_B_POSITION_0);
 }
 
 void loop() {
-  if (digitalRead(COIN_SENSOR_PIN) == LOW) {
+  bool coinIsLow = digitalRead(COIN_SENSOR_PIN) == LOW;
+  if (coinIsLow && !coinWasLow) {
     unsigned long now = millis();
     if (now - lastTriggerMs > DEBOUNCE_MS) {
       lastTriggerMs = now;
       handleCoinInserted();
     }
   }
+  coinWasLow = coinIsLow;
   delay(20);
 }
 
@@ -103,21 +109,25 @@ void dispenseIfWon(const String &response) {
 
   if (response == "DISPENSE:A") {
     Serial.println("当たり: ホッパーAからカプセルを排出します。");
-    dispenseFrom(servoA, SERVO_A_REST_ANGLE, SERVO_A_DISPENSE_ANGLE);
+    advanceRotor(
+      servoA, servoAAt180, SERVO_A_POSITION_0, SERVO_A_POSITION_180
+    );
     return;
   }
 
   if (response == "DISPENSE:B") {
     Serial.println("はずれ景品: ホッパーBからカプセルを排出します。");
-    dispenseFrom(servoB, SERVO_B_REST_ANGLE, SERVO_B_DISPENSE_ANGLE);
+    advanceRotor(
+      servoB, servoBAt180, SERVO_B_POSITION_0, SERVO_B_POSITION_180
+    );
     return;
   }
 
   Serial.println("[WARN] 想定外の応答: " + response);
 }
 
-void dispenseFrom(Servo &servo, int restAngle, int dispenseAngle) {
-  servo.write(dispenseAngle);
-  delay(SERVO_HOLD_MS);
-  servo.write(restAngle);
+void advanceRotor(Servo &servo, bool &at180, int position0, int position180) {
+  at180 = !at180;
+  servo.write(at180 ? position180 : position0);
+  delay(SERVO_SETTLE_MS);
 }
