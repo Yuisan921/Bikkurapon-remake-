@@ -24,6 +24,13 @@
       <h2 id="result-title"></h2>
       <p id="result-message"></p>
     </div>
+
+    <!-- 景品の在庫がすべて尽きたときの画面。補充されるまで表示し続ける -->
+    <div id="soldout-screen" class="screen hidden">
+      <h2>ごめんなさい!</h2>
+      <p class="soldout-main">巫女さんを呼んでください</p>
+      <p class="soldout-sub">景品がなくなってしまいました</p>
+    </div>
   </div>
 
   {% if show_debug_button %}
