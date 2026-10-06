@@ -13,6 +13,7 @@ on:
       - "bikkurapon.spec"
       - "requirements*.txt"
       - "installer/**"
+      - "tests/**"
       - ".github/workflows/build-windows.yml"
 
 jobs:
@@ -29,6 +30,11 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           pip install -r requirements-build.txt
+          pip install -r requirements-dev.txt
+
+      # テストが落ちている状態の.exeを配布してしまわないよう、ビルド前に実行する
+      - name: Run tests
+        run: pytest
 
       - name: Build bikkurapon.exe with PyInstaller
         run: pyinstaller bikkurapon.spec
