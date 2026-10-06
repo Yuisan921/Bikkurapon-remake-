@@ -7,7 +7,9 @@
  * コインセンサーの投入を検知したら、ノートPCで動いているFlaskサーバーの
  * /api/insert_coin にPOSTする。レスポンスのJSONの "hopper" フィールドが
  * "a" なら当たり用ホッパー、"b" ならはずれ用ホッパーのサーボを動かして
- * カプセルを排出する。null ならどちらも動かさない。
+ * カプセルを排出する。null ならどちらも動かさない。排出後は
+ * /api/dispense_ack へ完了応答を送り、それを受けて在庫と当選画面が確定する。
+ * APIには共有トークンを付け、同じWiFiにいる他端末からの不正な抽選を防ぐ。
  * サーボの角度自体はこのファームウェアの固定値(ホッパーごとの現物合わせ)
  * で、サーバー側は「どちらのホッパーか」だけを指定する。
  *
@@ -31,6 +33,8 @@
 const char *WIFI_SSID = "your-wifi-ssid";
 const char *WIFI_PASSWORD = "your-wifi-password";
 const char *SERVER_URL = "http://192.168.1.100:5000/api/insert_coin";
+// config/settings.json の device_token と同じ16文字以上の値にする
+const char *DEVICE_TOKEN = "change-this-device-token";
 
 const int COIN_SENSOR_PIN = D0;
 
@@ -49,6 +53,7 @@ const unsigned long DEBOUNCE_MS = 300;
 Servo servoA;
 Servo servoB;
 unsigned long lastTriggerMs = 0;
+bool coinArmed = true;
 
 void setup() {
   Serial.begin(115200);
@@ -67,12 +72,16 @@ void loop() {
     connectToWifi();
   }
 
-  if (digitalRead(COIN_SENSOR_PIN) == LOW) {
+  bool coinLow = digitalRead(COIN_SENSOR_PIN) == LOW;
+  if (coinLow && coinArmed) {
     unsigned long now = millis();
     if (now - lastTriggerMs > DEBOUNCE_MS) {
       lastTriggerMs = now;
+      coinArmed = false;
       handleCoinInserted();
     }
+  } else if (!coinLow) {
+    coinArmed = true;
   }
 
   delay(20);
@@ -110,12 +119,34 @@ void handleCoinInserted() {
   HTTPClient http;
   http.begin(SERVER_URL);
   http.addHeader("Content-Type", "application/json");
+  http.addHeader("X-Bikkurapon-Token", DEVICE_TOKEN);
   int statusCode = http.POST("{}");
 
   if (statusCode == 200) {
     String payload = http.getString();
     Serial.println("抽選結果: " + payload);
-    dispenseIfWon(payload);
+    JsonDocument doc;
+    DeserializationError err = deserializeJson(doc, payload);
+    if (err) {
+      Serial.print("JSON解析に失敗しました: ");
+      Serial.println(err.c_str());
+      http.end();
+      return;
+    }
+
+    if (doc["hopper"].isNull() || doc["reservation_id"].isNull()) {
+      Serial.println("どちらのホッパーも動かしません。");
+      http.end();
+      return;
+    }
+
+    String reservationId = doc["reservation_id"].as<String>();
+    String hopper = doc["hopper"].as<String>();
+    // 次のACK送信用HTTP接続を開く前に、抽選リクエストの接続を閉じる。
+    http.end();
+    bool success = dispenseIfWon(hopper.c_str());
+    sendDispenseAck(reservationId, success);
+    return;
   } else {
     Serial.printf("サーバー通信エラー: %d\n", statusCode);
   }
@@ -123,31 +154,46 @@ void handleCoinInserted() {
   http.end();
 }
 
-void dispenseIfWon(const String &payload) {
-  JsonDocument doc;
-  DeserializationError err = deserializeJson(doc, payload);
-  if (err) {
-    Serial.print("JSON解析に失敗しました: ");
-    Serial.println(err.c_str());
-    return;
-  }
-
-  if (doc["hopper"].isNull()) {
-    Serial.println("どちらのホッパーも動かしません。");
-    return;
-  }
-
-  const char *hopper = doc["hopper"];
-
+bool dispenseIfWon(const char *hopper) {
   if (strcmp(hopper, "a") == 0) {
     Serial.println("当たり: ホッパーAからカプセルを排出します。");
     dispenseFrom(servoA, SERVO_A_REST_ANGLE, SERVO_A_DISPENSE_ANGLE);
+    return true;
   } else if (strcmp(hopper, "b") == 0) {
     Serial.println("はずれ景品: ホッパーBからカプセルを排出します。");
     dispenseFrom(servoB, SERVO_B_REST_ANGLE, SERVO_B_DISPENSE_ANGLE);
+    return true;
   } else {
     Serial.printf("[WARN] 想定外のhopper値: %s\n", hopper);
+    return false;
   }
+}
+
+void sendDispenseAck(const String &reservationId, bool success) {
+  String ackUrl = SERVER_URL;
+  ackUrl.replace("/api/insert_coin", "/api/dispense_ack");
+
+  JsonDocument ackDoc;
+  ackDoc["reservation_id"] = reservationId;
+  ackDoc["success"] = success;
+  String body;
+  serializeJson(ackDoc, body);
+
+  // 応答だけ失われた場合にも届くよう最大3回送る。サーバーが既に処理済みの
+  // 場合は409を返すので、それも到達済みとして終了する。
+  for (int attempt = 0; attempt < 3; attempt++) {
+    HTTPClient ackHttp;
+    ackHttp.begin(ackUrl);
+    ackHttp.addHeader("Content-Type", "application/json");
+    ackHttp.addHeader("X-Bikkurapon-Token", DEVICE_TOKEN);
+    int statusCode = ackHttp.POST(body);
+    ackHttp.end();
+    if (statusCode == 200 || statusCode == 409) {
+      return;
+    }
+    delay(250);
+  }
+  Serial.println("[WARN] 排出完了ACKをサーバーへ送れませんでした。");
 }
 
 void dispenseFrom(Servo &servo, int restAngle, int dispenseAngle) {

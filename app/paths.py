@@ -62,6 +62,15 @@ def get_base_dir():
     return Path(__file__).resolve().parent.parent
 
 
+def get_legacy_base_dir(base_dir=None):
+    """旧版がexeの隣に保存した設定を読むための移行元を返す。"""
+    if not is_frozen():
+        return None
+    exe_dir = Path(sys.executable).resolve().parent
+    selected = Path(base_dir) if base_dir is not None else get_base_dir()
+    return exe_dir if exe_dir != selected else None
+
+
 def get_bundle_dir():
     if is_frozen():
         # PyInstallerの --onefile はこの一時フォルダに埋め込みリソースを展開する
@@ -71,3 +80,4 @@ def get_bundle_dir():
 
 BASE_DIR = get_base_dir()
 BUNDLE_DIR = get_bundle_dir()
+LEGACY_BASE_DIR = get_legacy_base_dir(BASE_DIR)

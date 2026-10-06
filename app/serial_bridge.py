@@ -10,6 +10,7 @@ ESP32から "COIN" という行を受け取ったらコールバックを呼び�
 
 import logging
 import threading
+import time
 
 import serial
 import serial.tools.list_ports
@@ -56,8 +57,10 @@ class SerialBridge:
         port,
         baudrate,
         on_coin_inserted,
+        on_dispense_result=None,
         port_finder=None,
         reconnect_interval=2.0,
+        ack_timeout=5.0,
     ):
         """
         port_finder: 再接続のときにポートを探し直す関数(任意)。USBを抜き差しすると
@@ -68,26 +71,44 @@ class SerialBridge:
         self.port = port
         self.baudrate = baudrate
         self.on_coin_inserted = on_coin_inserted
+        self.on_dispense_result = on_dispense_result
         self.port_finder = port_finder
         self.reconnect_interval = reconnect_interval
+        self.ack_timeout = ack_timeout
         self._serial = None
         self._stop_event = threading.Event()
         self._thread = None
 
     def start(self):
-        try:
-            self._serial = serial.Serial(self.port, self.baudrate, timeout=1)
-        except serial.SerialException as exc:
-            logger.warning("シリアルポート %s を開けませんでした: %s", self.port, exc)
-            return False
+        if self.port:
+            try:
+                self._serial = serial.Serial(self.port, self.baudrate, timeout=1)
+            except (serial.SerialException, OSError) as exc:
+                logger.warning(
+                    "シリアルポート %s を開けませんでした: %s。接続を待ちます。",
+                    self.port,
+                    exc,
+                )
+                self._serial = None
+        else:
+            logger.info("ESP32のUSB接続を待っています。後から挿しても自動認識します。")
 
         self._thread = threading.Thread(target=self._run, daemon=True)
         self._thread.start()
-        logger.info("USBシリアルブリッジを開始しました(port=%s, baudrate=%s)", self.port, self.baudrate)
+        if self._serial is not None:
+            logger.info(
+                "USBシリアルブリッジを開始しました(port=%s, baudrate=%s)",
+                self.port,
+                self.baudrate,
+            )
         return True
 
     def _run(self):
         while not self._stop_event.is_set():
+            if self._serial is None:
+                if not self._reconnect():
+                    break
+                continue
             try:
                 raw_line = self._serial.readline()
             except (serial.SerialException, OSError) as exc:
@@ -101,39 +122,98 @@ class SerialBridge:
             if not line:
                 continue
 
-            if line == "COIN":
-                self._handle_coin()
+            if line == "COIN" or line.startswith("COIN:"):
+                coin_id = line.partition(":")[2] or None
+                self._handle_coin(coin_id)
             else:
                 logger.debug("未知のシリアルメッセージ: %s", line)
 
-    def _handle_coin(self):
+    def _handle_coin(self, coin_id=None):
         logger.info("USB経由でコイン投入を検知しました。")
         try:
-            hopper = self.on_coin_inserted()
+            plan = self.on_coin_inserted()
         except Exception:  # noqa: BLE001 - 想定外のエラーでも受信スレッドは止めない
             logger.exception(
                 "コイン投入の処理中にエラーが発生しました(ホッパーは動かしません)。"
             )
-            hopper = None
-        self._respond(hopper)
+            plan = None
+
+        if not plan or not plan.get("hopper"):
+            self._write_response(f"NONE:{coin_id}\n" if coin_id else "NONE\n")
+            return
+
+        reservation_id = plan["reservation_id"]
+        hopper = str(plan["hopper"]).upper()
+        if coin_id:
+            message = f"DISPENSE:{coin_id}:{reservation_id}:{hopper}\n"
+        else:
+            message = f"DISPENSE:{reservation_id}:{hopper}\n"
+
+        if not self._write_response(message):
+            self._finish_dispense(reservation_id, False)
+            self._serial = None
+            return
+
+        success = self._wait_for_ack(reservation_id)
+        self._finish_dispense(reservation_id, success)
+        if not success and self._serial is None:
+            logger.warning("排出確認中にUSB接続が切れました。再接続を待ちます。")
+
+    def _finish_dispense(self, reservation_id, success):
+        if self.on_dispense_result is None:
+            return
+        try:
+            self.on_dispense_result(reservation_id, success)
+        except Exception:  # noqa: BLE001 - ACK処理失敗で受信スレッドを止めない
+            logger.exception("排出結果の確定処理に失敗しました(reservation=%s)", reservation_id)
+
+    def _wait_for_ack(self, reservation_id):
+        """ESP32がサーボを動かし終えるまで待つ。成功したときだけTrue。"""
+        deadline = time.monotonic() + self.ack_timeout
+        expected_done = f"DONE:{reservation_id}"
+        expected_failed = f"FAILED:{reservation_id}"
+        while not self._stop_event.is_set() and time.monotonic() < deadline:
+            try:
+                line = self._serial.readline().decode("utf-8", errors="ignore").strip()
+            except (serial.SerialException, OSError) as exc:
+                logger.warning("排出確認中のシリアルエラー: %s", exc)
+                self._serial = None
+                return False
+            if line == expected_done:
+                return True
+            if line == expected_failed:
+                return False
+            if line:
+                logger.debug("排出確認中のメッセージ: %s", line)
+        logger.warning("ESP32から排出完了ACKが届きませんでした(reservation=%s)", reservation_id)
+        return False
 
     def _reconnect(self):
         """シリアルポートを開き直す。接続できたら True、停止要求で止まったら False。"""
-        try:
-            self._serial.close()
-        except (serial.SerialException, OSError):
-            pass
+        if self._serial is not None:
+            try:
+                self._serial.close()
+            except (serial.SerialException, OSError):
+                pass
+        self._serial = None
 
         while not self._stop_event.is_set():
-            # stop() が呼ばれたらすぐ抜けられるよう、sleep ではなく wait で待つ
-            if self._stop_event.wait(self.reconnect_interval):
-                return False
-
-            port = (self.port_finder() if self.port_finder else None) or self.port
+            try:
+                discovered_port = self.port_finder() if self.port_finder else None
+            except (OSError, serial.SerialException) as exc:
+                logger.debug("シリアルポート探索に失敗しました: %s", exc)
+                discovered_port = None
+            port = discovered_port or self.port
+            if not port:
+                if self._stop_event.wait(self.reconnect_interval):
+                    return False
+                continue
             try:
                 self._serial = serial.Serial(port, self.baudrate, timeout=1)
             except (serial.SerialException, OSError) as exc:
                 logger.debug("再接続に失敗しました(%s): %s", port, exc)
+                if self._stop_event.wait(self.reconnect_interval):
+                    return False
                 continue
 
             self.port = port
@@ -141,14 +221,18 @@ class SerialBridge:
             return True
         return False
 
-    def _respond(self, hopper):
-        message = "NONE\n" if hopper is None else f"DISPENSE:{hopper.upper()}\n"
+    def _write_response(self, message):
         try:
             self._serial.write(message.encode("utf-8"))
+            return True
         except (serial.SerialException, OSError) as exc:
             logger.warning("シリアル書き込みエラー: %s", exc)
+            return False
 
     def stop(self):
         self._stop_event.set()
         if self._serial is not None:
-            self._serial.close()
+            try:
+                self._serial.close()
+            except (serial.SerialException, OSError):
+                pass

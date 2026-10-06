@@ -12,15 +12,16 @@ ESP32を接続しない場合(開発中など)は、ブラウザの「コイン�
 """
 
 import json
+import hmac
 import logging
 
 from flask import Flask, abort, jsonify, make_response, render_template, request
 from flask_socketio import SocketIO
 
 from app.browser_launcher import open_windows_after_delay
-from app.config_setup import ensure_config_dir
+from app.config_setup import ensure_config_dir, migrate_legacy_data
 from app.lottery import Lottery, OutOfStock
-from app.paths import BASE_DIR, BUNDLE_DIR
+from app.paths import BASE_DIR, BUNDLE_DIR, LEGACY_BASE_DIR
 from app.serial_bridge import SerialBridge, find_serial_port
 
 logging.basicConfig(level=logging.INFO)
@@ -34,6 +35,7 @@ logger.info("設定フォルダ: %s / データフォルダ: %s", CONFIG_DIR, DA
 # 同梱されているデフォルト設定をコピーして作る(以降はここを直接編集できる)。
 # 既にある場合でも、旧バージョンの景品構成(大当たり等)のままなら
 # 最新の既定値に差し替える(詳細はconfig_setup.pyのコメント参照)。
+migrate_legacy_data(LEGACY_BASE_DIR, BASE_DIR)
 ensure_config_dir(CONFIG_DIR, BUNDLE_DIR / "config")
 
 app = Flask(
@@ -53,6 +55,12 @@ lottery = Lottery(
 )
 
 
+def _broadcast_result(result):
+    logger.info("抽選結果: %s (残り %s)", result["name"], result["remaining"])
+    socketio.emit("draw_result", result)
+    socketio.emit("stock_updated", lottery.get_status())
+
+
 def run_draw_and_broadcast():
     """抽選を1回実行し、ブラウザ画面に結果と在庫を通知する。
 
@@ -68,9 +76,41 @@ def run_draw_and_broadcast():
         socketio.emit("stock_updated", lottery.get_status())
         return None
 
-    logger.info("抽選結果: %s (残り %s)", result["name"], result["remaining"])
-    socketio.emit("draw_result", result)
-    socketio.emit("stock_updated", lottery.get_status())
+    _broadcast_result(result)
+    return result
+
+
+def prepare_hardware_draw():
+    """実物の排出用に抽選結果を予約する。在庫確定と表示はACK後に行う。"""
+    try:
+        plan = lottery.reserve_draw()
+    except OutOfStock:
+        logger.error("在庫がすべて尽きています。巫女さんを呼ぶ画面を表示します。")
+        socketio.emit("out_of_stock", {})
+        socketio.emit("stock_updated", lottery.get_status())
+        return None
+
+    # カプセルを出さない完全ハズレは物理ACKが不要なので即時確定する。
+    if plan.get("hopper") is None:
+        result = lottery.commit_draw(plan["reservation_id"])
+        _broadcast_result(result)
+        return {**result, "reservation_id": None}
+    return plan
+
+
+def finish_hardware_draw(reservation_id, success):
+    """ESP32の排出完了応答を受け、成功時だけ在庫と表示を確定する。"""
+    if not success:
+        lottery.cancel_draw(reservation_id)
+        socketio.emit("stock_updated", lottery.get_status())
+        logger.error("カプセル排出を確認できなかったため抽選を取り消しました。")
+        return None
+    try:
+        result = lottery.commit_draw(reservation_id)
+    except (KeyError, OutOfStock) as exc:
+        logger.error("排出済み抽選を確定できませんでした: %s", exc)
+        return None
+    _broadcast_result(result)
     return result
 
 
@@ -78,10 +118,11 @@ def handle_coin_inserted_from_serial():
     """ESP32からUSBシリアルで "COIN" を受け取ったときに呼ばれる。
     戻り値は動かすべきホッパー記号("a"/"b"。どちらも使わない・在庫切れなら None)。
     """
-    result = run_draw_and_broadcast()
-    if result is None:
-        return None
-    return result.get("hopper")
+    return prepare_hardware_draw()
+
+
+def handle_serial_dispense_result(reservation_id, success):
+    finish_hardware_draw(reservation_id, success)
 
 
 def start_serial_bridge():
@@ -92,16 +133,13 @@ def start_serial_bridge():
 
     port = find_serial_port() if port_setting == "auto" else port_setting
     if not port:
-        logger.warning(
-            "USBシリアルポートが見つかりませんでした。"
-            "config/settings.json の serial_port で明示的に指定してください。"
-        )
-        return None
+        logger.info("USBシリアルポートはまだ見つかりません。接続を待機します。")
 
     bridge = SerialBridge(
         port=port,
         baudrate=settings.get("serial_baudrate", 115200),
         on_coin_inserted=handle_coin_inserted_from_serial,
+        on_dispense_result=handle_serial_dispense_result,
         # "auto" のときは、USBを抜き差ししてポート名が変わっても探し直す
         port_finder=(lambda: find_serial_port(warn=False)) if port_setting == "auto" else None,
     )
@@ -110,7 +148,7 @@ def start_serial_bridge():
     return None
 
 
-serial_bridge = start_serial_bridge()
+serial_bridge = None
 
 
 # --- アクセス制限 -------------------------------------------------------
@@ -120,6 +158,17 @@ serial_bridge = start_serial_bridge()
 # 場合だけ、config/settings.json で明示的に許可する(README参照)。
 _LOOPBACK_ADDRESSES = {"127.0.0.1", "::1", "::ffff:127.0.0.1"}
 _ADMIN_PATHS = {"/admin", "/api/restock", "/api/set_stock", "/api/set_probability"}
+_DEVICE_PATHS = {"/api/insert_coin", "/api/dispense_ack"}
+
+
+def _valid_device_token():
+    configured = settings.get("device_token")
+    provided = request.headers.get("X-Bikkurapon-Token", "")
+    return (
+        isinstance(configured, str)
+        and len(configured) >= 16
+        and hmac.compare_digest(provided, configured)
+    )
 
 
 @app.before_request
@@ -128,10 +177,11 @@ def restrict_remote_access():
         return None
     if request.path in _ADMIN_PATHS and not settings.get("allow_remote_admin", False):
         abort(403)
-    if request.path == "/api/insert_coin" and not settings.get(
-        "allow_remote_insert_coin", False
-    ):
-        abort(403)
+    if request.path in _DEVICE_PATHS:
+        if not settings.get("allow_remote_insert_coin", False):
+            abort(403)
+        if not _valid_device_token():
+            abort(403)
     return None
 
 
@@ -168,10 +218,29 @@ def api_status():
 @app.route("/api/insert_coin", methods=["POST"])
 def api_insert_coin():
     """ブラウザのテストボタンからコイン投入を通知するエンドポイント。"""
-    result = run_draw_and_broadcast()
+    # ローカルのテストボタンは実物を動かさないので即時確定する。
+    if request.remote_addr in _LOOPBACK_ADDRESSES:
+        result = run_draw_and_broadcast()
+    else:
+        # WiFi版ESP32は排出完了後に /api/dispense_ack を送る。ACKまでは
+        # 在庫ファイルも演出画面も確定しない。
+        result = prepare_hardware_draw()
     if result is None:
         # 在庫切れ。WiFi版ESP32は200以外ならホッパーを動かさない。
         return jsonify({"error": "out_of_stock"}), 409
+    return jsonify(result)
+
+
+@app.route("/api/dispense_ack", methods=["POST"])
+def api_dispense_ack():
+    payload = _json_payload()
+    reservation_id = _field(payload, "reservation_id", str)
+    success = payload.get("success")
+    if not isinstance(success, bool):
+        abort(make_response(jsonify({"error": "invalid or missing field: success"}), 400))
+    result = finish_hardware_draw(reservation_id, success)
+    if result is None:
+        return jsonify({"error": "unknown_or_cancelled_reservation"}), 409
     return jsonify(result)
 
 
@@ -218,7 +287,9 @@ def api_set_probability():
 
 
 def main():
+    global serial_bridge
     port = settings.get("port", 5000)
+    serial_bridge = start_serial_bridge()
 
     # サーバー起動が終わるのを少し待ってから、演出画面(キオスクモード)と
     # 管理画面を自動でブラウザで開く。config/settings.json の

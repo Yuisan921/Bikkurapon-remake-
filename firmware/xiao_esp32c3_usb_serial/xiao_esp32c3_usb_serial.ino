@@ -6,13 +6,9 @@
  * 計2個のサーボをこの1枚のESP32で制御する。
  *
  * コインセンサーの投入を検知したら、USBシリアル経由でノートPCに
- * "COIN" という1行を送る。ノートPC側(Flaskサーバー)が抽選し、
- *   - 当たり用ホッパーから排出するなら "DISPENSE:A"
- *   - はずれ用ホッパーから排出するなら "DISPENSE:B"
- *   - どちらも動かさないなら "NONE"
- * を1行返してくるので、それに応じて該当するサーボモーターでカプセルを
- * 排出する。サーボの角度自体はこのファームウェアの固定値(ホッパーごとの
- * 現物合わせ)で、サーバー側は「どちらのホッパーか」だけを指定する。
+ * "COIN:<連番>" を送る。ノートPC側が予約番号付きのDISPENSE命令を返し、
+ * サーボ動作後に "DONE:<予約番号>" を返して初めて在庫と当選表示を確定する。
+ * タイムアウトやUSB切断時は予約が取り消され、在庫だけ減ることを防ぐ。
  *
  * Arduino IDE設定:
  *   - ボード: "XIAO_ESP32C3" を選択(esp32 by Espressif Systems のボードパッケージ内)
@@ -47,6 +43,8 @@ const unsigned long RESPONSE_TIMEOUT_MS = 3000;
 Servo servoA;
 Servo servoB;
 unsigned long lastTriggerMs = 0;
+unsigned long coinSequence = 0;
+bool coinArmed = true;
 
 void setup() {
   Serial.begin(115200);
@@ -59,20 +57,26 @@ void setup() {
 }
 
 void loop() {
-  if (digitalRead(COIN_SENSOR_PIN) == LOW) {
+  bool coinLow = digitalRead(COIN_SENSOR_PIN) == LOW;
+  if (coinLow && coinArmed) {
     unsigned long now = millis();
     if (now - lastTriggerMs > DEBOUNCE_MS) {
       lastTriggerMs = now;
+      coinArmed = false;
       handleCoinInserted();
     }
+  } else if (!coinLow) {
+    // 一度投入を処理したら、信号がHIGHへ戻るまで次の投入を受け付けない。
+    coinArmed = true;
   }
   delay(20);
 }
 
 void handleCoinInserted() {
-  Serial.println("COIN");
+  String coinId = String(++coinSequence);
+  Serial.println("COIN:" + coinId);
 
-  String response = waitForResponse(RESPONSE_TIMEOUT_MS);
+  String response = waitForResponse(coinId, RESPONSE_TIMEOUT_MS);
   if (response.length() == 0) {
     Serial.println("[WARN] ノートPCからの応答がタイムアウトしました。");
     return;
@@ -81,13 +85,16 @@ void handleCoinInserted() {
   dispenseIfWon(response);
 }
 
-String waitForResponse(unsigned long timeoutMs) {
+String waitForResponse(const String &coinId, unsigned long timeoutMs) {
   unsigned long startMs = millis();
+  String noneResponse = "NONE:" + coinId;
+  String dispensePrefix = "DISPENSE:" + coinId + ":";
   while (millis() - startMs < timeoutMs) {
     if (Serial.available()) {
       String line = Serial.readStringUntil('\n');
       line.trim();
-      if (line.length() > 0) {
+      // 前回タイムアウト後に遅れて届いた命令はcoinIdが違うので捨てる。
+      if (line == noneResponse || line.startsWith(dispensePrefix)) {
         return line;
       }
     }
@@ -96,24 +103,39 @@ String waitForResponse(unsigned long timeoutMs) {
 }
 
 void dispenseIfWon(const String &response) {
-  if (response == "NONE") {
+  if (response.startsWith("NONE:")) {
     Serial.println("はずれ扱い: どちらのホッパーも動かしません。");
     return;
   }
 
-  if (response == "DISPENSE:A") {
+  // DISPENSE:<coinId>:<reservationId>:<hopper>
+  int firstColon = response.indexOf(':');
+  int secondColon = response.indexOf(':', firstColon + 1);
+  int thirdColon = response.indexOf(':', secondColon + 1);
+  if (firstColon < 0 || secondColon < 0 || thirdColon < 0) {
+    Serial.println("[WARN] 想定外の応答: " + response);
+    return;
+  }
+  String reservationId = response.substring(secondColon + 1, thirdColon);
+  String hopper = response.substring(thirdColon + 1);
+  bool success = false;
+
+  if (hopper == "A") {
     Serial.println("当たり: ホッパーAからカプセルを排出します。");
     dispenseFrom(servoA, SERVO_A_REST_ANGLE, SERVO_A_DISPENSE_ANGLE);
-    return;
+    success = true;
   }
-
-  if (response == "DISPENSE:B") {
+  else if (hopper == "B") {
     Serial.println("はずれ景品: ホッパーBからカプセルを排出します。");
     dispenseFrom(servoB, SERVO_B_REST_ANGLE, SERVO_B_DISPENSE_ANGLE);
-    return;
+    success = true;
+  } else {
+    Serial.println("[WARN] 想定外のホッパー: " + hopper);
   }
 
-  Serial.println("[WARN] 想定外の応答: " + response);
+  String ack = success ? "DONE:" : "FAILED:";
+  ack += reservationId;
+  Serial.println(ack);
 }
 
 void dispenseFrom(Servo &servo, int restAngle, int dispenseAngle) {

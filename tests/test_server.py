@@ -8,8 +8,7 @@ from app.lottery import Lottery
 
 @pytest.fixture(scope="module")
 def server_module():
-    # app.server は import した時点でシリアルポートを探して開こうとするため、
-    # 実機のESP32をつないだPCでテストしても触らないよう、検出を無効にして読み込む
+    # 実機のESP32をつないだPCでテストしても触らないよう、検出を無効にする
     with mock.patch("app.serial_bridge.find_serial_port", return_value=None):
         from app import server
 
@@ -31,6 +30,7 @@ def server(server_module, tmp_path, monkeypatch):
     monkeypatch.setattr(server_module, "lottery", _make_lottery(tmp_path, prizes))
     monkeypatch.setitem(server_module.settings, "allow_remote_admin", False)
     monkeypatch.setitem(server_module.settings, "allow_remote_insert_coin", False)
+    monkeypatch.setitem(server_module.settings, "device_token", "test-device-token-1234")
     return server_module
 
 
@@ -63,8 +63,31 @@ def test_serial_coin_when_out_of_stock_moves_no_hopper(server):
     assert server.handle_coin_inserted_from_serial() is None
 
 
-def test_serial_coin_returns_hopper_when_in_stock(server):
-    assert server.handle_coin_inserted_from_serial() in ("a", "b")
+def test_serial_coin_commits_only_after_successful_ack(server):
+    socket_client = server.socketio.test_client(server.app)
+    socket_client.get_received()
+
+    plan = server.handle_coin_inserted_from_serial()
+
+    assert plan["hopper"] in ("a", "b")
+    assert "draw_result" not in _event_names(socket_client)
+    persisted_before = json.loads(server.lottery.stock_data_path.read_text(encoding="utf-8"))
+    assert sum(persisted_before.values()) == 2
+
+    result = server.finish_hardware_draw(plan["reservation_id"], True)
+
+    assert result is not None
+    assert "draw_result" in _event_names(socket_client)
+    persisted_after = json.loads(server.lottery.stock_data_path.read_text(encoding="utf-8"))
+    assert sum(persisted_after.values()) == 1
+
+
+def test_serial_failed_ack_cancels_without_decrement(server):
+    plan = server.handle_coin_inserted_from_serial()
+
+    assert server.finish_hardware_draw(plan["reservation_id"], False) is None
+    persisted = json.loads(server.lottery.stock_data_path.read_text(encoding="utf-8"))
+    assert sum(persisted.values()) == 2
 
 
 def test_normal_draw_broadcasts_result(server):
@@ -110,6 +133,18 @@ def test_remote_can_still_read_status_and_view_display(server):
     assert client.get("/", environ_overrides=REMOTE).status_code == 200
 
 
+def test_pages_load_socket_io_from_local_static_asset(server):
+    client = server.app.test_client()
+
+    index_html = client.get("/").get_data(as_text=True)
+    admin_html = client.get("/admin").get_data(as_text=True)
+
+    assert "cdn.socket.io" not in index_html
+    assert "cdn.socket.io" not in admin_html
+    assert "/static/vendor/socket.io.min.js" in index_html
+    assert client.get("/static/vendor/socket.io.min.js").status_code == 200
+
+
 def test_remote_admin_allowed_when_enabled(server, monkeypatch):
     monkeypatch.setitem(server.settings, "allow_remote_admin", True)
 
@@ -121,12 +156,62 @@ def test_remote_admin_allowed_when_enabled(server, monkeypatch):
     assert response.get_json()["remaining"] == 5
 
 
-def test_remote_insert_coin_allowed_when_enabled_for_wifi_esp32(server, monkeypatch):
+def test_remote_insert_coin_requires_device_token(server, monkeypatch):
     monkeypatch.setitem(server.settings, "allow_remote_insert_coin", True)
+    client = server.app.test_client()
 
-    response = server.app.test_client().post("/api/insert_coin", environ_overrides=REMOTE)
+    assert client.post("/api/insert_coin", environ_overrides=REMOTE).status_code == 403
+    assert client.post(
+        "/api/insert_coin",
+        headers={"X-Bikkurapon-Token": "wrong-device-token"},
+        environ_overrides=REMOTE,
+    ).status_code == 403
+
+
+def test_remote_wifi_draw_commits_only_after_authenticated_ack(server, monkeypatch):
+    monkeypatch.setitem(server.settings, "allow_remote_insert_coin", True)
+    headers = {"X-Bikkurapon-Token": "test-device-token-1234"}
+    socket_client = server.socketio.test_client(server.app)
+    socket_client.get_received()
+
+    response = server.app.test_client().post(
+        "/api/insert_coin", headers=headers, environ_overrides=REMOTE
+    )
 
     assert response.status_code == 200
+    plan = response.get_json()
+    assert plan["reservation_id"]
+    assert "draw_result" not in _event_names(socket_client)
+
+    ack = server.app.test_client().post(
+        "/api/dispense_ack",
+        json={"reservation_id": plan["reservation_id"], "success": True},
+        headers=headers,
+        environ_overrides=REMOTE,
+    )
+
+    assert ack.status_code == 200
+    assert "draw_result" in _event_names(socket_client)
+
+
+def test_remote_failed_dispense_ack_does_not_decrement(server, monkeypatch):
+    monkeypatch.setitem(server.settings, "allow_remote_insert_coin", True)
+    headers = {"X-Bikkurapon-Token": "test-device-token-1234"}
+    client = server.app.test_client()
+    plan = client.post(
+        "/api/insert_coin", headers=headers, environ_overrides=REMOTE
+    ).get_json()
+
+    response = client.post(
+        "/api/dispense_ack",
+        json={"reservation_id": plan["reservation_id"], "success": False},
+        headers=headers,
+        environ_overrides=REMOTE,
+    )
+
+    assert response.status_code == 409
+    persisted = json.loads(server.lottery.stock_data_path.read_text(encoding="utf-8"))
+    assert sum(persisted.values()) == 2
 
 
 def test_local_requests_always_allowed(server):

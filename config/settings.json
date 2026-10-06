@@ -3,6 +3,7 @@
   "host": "127.0.0.1",
   "allow_remote_admin": false,
   "allow_remote_insert_coin": false,
+  "device_token": null,
   "show_debug_button": true,
   "serial_port": "auto",
   "serial_baudrate": 115200,

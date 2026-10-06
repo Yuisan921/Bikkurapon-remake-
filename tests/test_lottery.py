@@ -112,6 +112,48 @@ def test_has_stock_is_true_with_unlimited_prize(lottery):
     assert lottery.has_stock() is True  # はずれは stock=None(無制限)
 
 
+def test_reservation_does_not_decrement_persisted_stock_until_commit(lottery):
+    reservation = lottery.reserve_draw()
+
+    persisted = json.loads(lottery.stock_data_path.read_text(encoding="utf-8"))
+    assert persisted["atari"] == 2
+    assert lottery.get_status()[0]["remaining"] == 1
+
+    result = lottery.commit_draw(reservation["reservation_id"])
+    persisted = json.loads(lottery.stock_data_path.read_text(encoding="utf-8"))
+    assert result["remaining"] == 1
+    assert persisted["atari"] == 1
+
+
+def test_cancelled_reservation_returns_item_to_available_stock(lottery):
+    reservation = lottery.reserve_draw()
+    assert lottery.get_status()[0]["remaining"] == 1
+
+    assert lottery.cancel_draw(reservation["reservation_id"]) is True
+    assert lottery.get_status()[0]["remaining"] == 2
+    assert lottery.cancel_draw(reservation["reservation_id"]) is False
+
+
+def test_expired_reservation_is_released(tmp_path):
+    prizes = [
+        {"id": "only", "name": "景品", "probability": 1.0, "stock": 1, "hopper": "a"}
+    ]
+    prizes_path = tmp_path / "prizes.json"
+    prizes_path.write_text(json.dumps(prizes), encoding="utf-8")
+    now = [100.0]
+    expiring_lottery = Lottery(
+        prizes_path,
+        tmp_path / "stock.json",
+        reservation_timeout=5.0,
+        clock=lambda: now[0],
+    )
+
+    expiring_lottery.reserve_draw()
+    assert expiring_lottery.has_stock() is False
+    now[0] += 6.0
+    assert expiring_lottery.has_stock() is True
+
+
 def test_writes_leave_no_temp_files_and_valid_json(limited_lottery):
     limited_lottery.draw()
     limited_lottery.set_probability("atari", 0.5)
