@@ -27,7 +27,12 @@ function upsertRow(p) {
     row.probInput = probCell.querySelector(".prob-input");
     const commitProbability = () => {
       const value = Number(row.probInput.value);
-      if (Number.isNaN(value) || value < 0) return;
+      if (row.probInput.value === "" || Number.isNaN(value) || value < 0) return;
+      // 画面の表示は整数%に丸めてあるので、何も変更せずにフォーカスを外した
+      // だけで送信すると、本来の確率(例: 20.5%)が丸めた値で上書きされてしまう。
+      // 表示していた値から変わったときだけ送る。
+      if (String(value) === row.shownProb) return;
+      row.shownProb = String(value);
       fetch("/api/set_probability", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -49,6 +54,7 @@ function upsertRow(p) {
 
   if (document.activeElement !== row.probInput) {
     row.probInput.value = Math.round(p.probability * 100);
+    row.shownProb = String(row.probInput.value);
   }
 
   const controlsCell = row.tr.querySelector(".stock-controls-cell");

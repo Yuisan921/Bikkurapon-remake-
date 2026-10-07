@@ -100,6 +100,29 @@ html, body {
   color: #ccc;
 }
 
+/* 在庫切れ(巫女さん呼び出し)画面 */
+#stage.state-soldout {
+  background: radial-gradient(circle at center, #7a1020, #2a0508);
+}
+
+#soldout-screen h2 {
+  font-size: 3rem;
+  margin: 0;
+}
+
+#soldout-screen .soldout-main {
+  font-size: 4rem;
+  font-weight: bold;
+  margin: 0;
+  animation: pulse 1.8s ease-in-out infinite;
+}
+
+#soldout-screen .soldout-sub {
+  font-size: 1.5rem;
+  opacity: 0.8;
+  margin: 0;
+}
+
 #debug-insert-coin {
   position: fixed;
   bottom: 16px;

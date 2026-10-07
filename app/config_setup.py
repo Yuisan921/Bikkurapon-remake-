@@ -18,6 +18,41 @@ import shutil
 logger = logging.getLogger(__name__)
 
 
+def migrate_legacy_data(legacy_base_dir, base_dir):
+    """旧版がexeの隣に保存した設定・在庫を新しい保存先へ一度だけコピーする。
+
+    新しい保存先に同名ファイルがある場合は、現在のデータを優先して上書きしない。
+    """
+    if legacy_base_dir is None:
+        return
+    legacy_base_dir = legacy_base_dir.resolve()
+    base_dir = base_dir.resolve()
+    if legacy_base_dir == base_dir or not legacy_base_dir.exists():
+        return
+
+    relative_files = (
+        ("config", "settings.json"),
+        ("config", "prizes.json"),
+        ("data", "stock.json"),
+    )
+    copied = []
+    for directory, filename in relative_files:
+        source = legacy_base_dir / directory / filename
+        destination = base_dir / directory / filename
+        if not source.is_file() or destination.exists():
+            continue
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(source, destination)
+        copied.append(str(destination))
+
+    if copied:
+        logger.warning(
+            "旧バージョンの設定・在庫を %s から新しい保存先へ移行しました: %s",
+            legacy_base_dir,
+            ", ".join(copied),
+        )
+
+
 def _prizes_need_migration(prizes_path):
     """prizes.json が hopper フィールドを持たない旧形式かどうか。"""
     try:
@@ -38,6 +73,13 @@ def ensure_config_dir(config_dir, bundle_config_dir):
     if not config_dir.exists():
         shutil.copytree(bundle_config_dir, config_dir)
         return
+
+    # 途中で削除・移行されたファイルだけを既定値から補う。既存の編集内容は
+    # 上書きしない。
+    for filename in ("settings.json", "prizes.json"):
+        destination = config_dir / filename
+        if not destination.exists():
+            shutil.copy(bundle_config_dir / filename, destination)
 
     prizes_path = config_dir / "prizes.json"
     if _prizes_need_migration(prizes_path):
