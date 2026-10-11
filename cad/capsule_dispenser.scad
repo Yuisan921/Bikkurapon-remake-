@@ -20,7 +20,8 @@
  * ========================================================================== */
 
 // ---- 出力する部品 ----
-PART = "assembly_cutaway";
+// PRINT_PARTを別ファイルまたはコマンドラインから指定すると上書きできる。
+PART = is_undef(PRINT_PART) ? "assembly_cutaway" : PRINT_PART;
 // "rotor_body" / "rotor_lid" / "housing" /
 // "front_plate" / "rear_plate" /
 // "hopper_adapter" / "outlet_adapter" /
@@ -28,7 +29,6 @@ PART = "assembly_cutaway";
 
 // assembly表示時のローター位置。0と180が停止位置。
 ROTOR_PREVIEW_ANGLE = 0;
-SHOW_PREVIEW_CAPSULE = true;
 SHOW_STEPPER_PREVIEW = true;
 
 // ---- カプセル ----
@@ -487,13 +487,6 @@ module outlet_adapter() {
 // 組み立てプレビュー
 // ==========================================================================
 
-module preview_capsule() {
-    capsule_center_z = divider_thickness/2 + capsule_diameter/2;
-    color([0.86, 0.04, 0.07, 0.95])
-        translate([0, 0, capsule_center_z])
-            sphere(d=capsule_diameter);
-}
-
 module preview_stepper() {
     front_plate_outer_y = -(housing_depth/2 + front_plate_thickness);
     body_center_y = front_plate_outer_y - stepper_body_depth/2;
@@ -523,8 +516,6 @@ module rotor_cutaway_preview() {
 
     color([0.30, 0.58, 0.88, 0.28])
         rotor_lid_mechanical();
-
-    preview_capsule();
 }
 
 module assembly_preview(cutaway=false) {
@@ -540,9 +531,6 @@ module assembly_preview(cutaway=false) {
 
         color("Orange", cutaway ? 0.35 : 1.0)
             rotor_lid_mechanical();
-
-        if (SHOW_PREVIEW_CAPSULE)
-            preview_capsule();
     }
 
     if (!cutaway)
