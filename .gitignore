@@ -4,6 +4,7 @@ __pycache__/
 venv/
 venv_build/
 data/stock.json
+data/*.log*
 bikkurapon-startup.log
 .DS_Store
 

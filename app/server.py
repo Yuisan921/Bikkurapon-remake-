@@ -14,6 +14,7 @@ import json
 import hmac
 import logging
 import threading
+from logging.handlers import RotatingFileHandler
 
 from flask import Flask, abort, jsonify, make_response, render_template, request
 from flask_socketio import SocketIO
@@ -30,6 +31,24 @@ logger = logging.getLogger(__name__)
 
 CONFIG_DIR = BASE_DIR / "config"
 DATA_DIR = BASE_DIR / "data"
+DATA_DIR.mkdir(parents=True, exist_ok=True)
+
+# GUI版ではコンソールを表示しないため、起動失敗も確認できるログを保存する。
+# 1ファイル1MB・3世代に制限し、文化祭のPCで容量が増え続けないようにする。
+try:
+    file_handler = RotatingFileHandler(
+        DATA_DIR / "bikkurapon.log",
+        maxBytes=1_000_000,
+        backupCount=3,
+        encoding="utf-8",
+    )
+    file_handler.setFormatter(
+        logging.Formatter("%(asctime)s %(levelname)s %(name)s: %(message)s")
+    )
+    logging.getLogger().addHandler(file_handler)
+except OSError:
+    logger.exception("ログファイルを作成できませんでした。")
+
 logger.info("設定フォルダ: %s / データフォルダ: %s", CONFIG_DIR, DATA_DIR)
 
 # .exe化した初回起動時は、実行ファイルの隣にconfig/がまだ無いので、

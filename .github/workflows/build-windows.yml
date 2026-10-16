@@ -71,6 +71,10 @@ jobs:
               }
             }
             if (-not $ready) {
+              Get-ChildItem -Path "$PWD\dist" -Recurse -Filter "bikkurapon.log*" | ForEach-Object {
+                Write-Host "----- $($_.FullName) -----"
+                Get-Content $_.FullName
+              }
               throw "bikkurapon.exe did not become ready within 30 seconds"
             }
           } finally {
