@@ -9,8 +9,8 @@
 ; ({autopf}\Bikkurapon)なので、Windowsのユーザー名に日本語(非ASCII文字)が
 ; 含まれていて発生する不具合を避けられる。
 
-#define MyAppName "びっくらポン"
-#define MyAppVersion "1.0"
+#define MyAppName "妖怪まつり びっくらぽん"
+#define MyAppVersion "2.0"
 #define MyAppExeName "bikkurapon.exe"
 
 [Setup]

@@ -1,4 +1,5 @@
 import serial
+from types import SimpleNamespace
 
 from app import serial_bridge
 from app.serial_bridge import SerialBridge
@@ -150,3 +151,30 @@ def test_stop_during_reconnect_ends_the_loop(monkeypatch):
 
     monkeypatch.setattr(serial_bridge.serial, "Serial", always_fail)
     bridge._run()
+
+
+def test_auto_detects_genuine_arduino_uno(monkeypatch):
+    ports = [
+        SimpleNamespace(device="COM8", vid=0x2341, description="Arduino Uno"),
+    ]
+    monkeypatch.setattr(serial_bridge.serial.tools.list_ports, "comports", lambda: ports)
+
+    assert serial_bridge.find_serial_port() == "COM8"
+
+
+def test_auto_detects_ch340_compatible_uno(monkeypatch):
+    ports = [
+        SimpleNamespace(device="COM5", vid=0x1A86, description="USB-SERIAL CH340"),
+    ]
+    monkeypatch.setattr(serial_bridge.serial.tools.list_ports, "comports", lambda: ports)
+
+    assert serial_bridge.find_serial_port() == "COM5"
+
+
+def test_status_changes_when_bridge_stops():
+    bridge = SerialBridge("COM3", 115200, lambda: None)
+    bridge._serial = FakeSerial([], bridge._stop_event)
+
+    assert bridge.get_status()["connected"] is True
+    bridge.stop()
+    assert bridge.get_status()["connected"] is False

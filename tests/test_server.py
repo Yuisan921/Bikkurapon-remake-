@@ -97,7 +97,42 @@ def test_normal_draw_broadcasts_result(server):
     response = server.app.test_client().post("/api/insert_coin")
 
     assert response.status_code == 200
-    assert "draw_result" in _event_names(socket_client)
+    names = _event_names(socket_client)
+    assert "draw_started" in names
+    assert "draw_result" in names
+
+
+def test_preview_result_does_not_change_stock(server):
+    socket_client = server.socketio.test_client(server.app)
+    socket_client.get_received()
+    before = server.lottery.get_status()
+
+    response = server.app.test_client().post(
+        "/api/preview_result", json={"prize_id": "atari"}
+    )
+
+    assert response.status_code == 200
+    assert server.lottery.get_status() == before
+    names = _event_names(socket_client)
+    assert "draw_started" in names
+    assert "draw_result" in names
+    assert "stock_updated" not in names
+
+
+def test_system_status_reports_hardware_connection(server, monkeypatch):
+    bridge = mock.Mock()
+    bridge.get_status.return_value = {
+        "enabled": True,
+        "connected": True,
+        "port": "COM4",
+    }
+    monkeypatch.setattr(server, "serial_bridge", bridge)
+
+    response = server.app.test_client().get("/api/system_status")
+
+    assert response.status_code == 200
+    assert response.get_json()["hardware"]["port"] == "COM4"
+    assert response.get_json()["hardware"]["connected"] is True
 
 
 REMOTE = {"REMOTE_ADDR": "192.168.0.50"}
@@ -124,6 +159,17 @@ def test_remote_cannot_open_admin_page_or_insert_coin_by_default(server):
     assert client.get("/admin", environ_overrides=REMOTE).status_code == 403
     assert client.post("/api/insert_coin", environ_overrides=REMOTE).status_code == 403
     assert server.lottery.get_status()[0]["remaining"] == 1  # 抽選も走っていない
+
+
+@pytest.mark.parametrize("path", ["/api/system_status", "/api/preview_result"])
+def test_remote_cannot_use_new_admin_endpoints_by_default(server, path):
+    client = server.app.test_client()
+    response = (
+        client.get(path, environ_overrides=REMOTE)
+        if path.endswith("system_status")
+        else client.post(path, json={"prize_id": "atari"}, environ_overrides=REMOTE)
+    )
+    assert response.status_code == 403
 
 
 def test_remote_can_still_read_status_and_view_display(server):

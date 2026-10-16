@@ -1,4 +1,4 @@
-"""XIAO ESP32-C3とのUSBシリアル通信を担当するブリッジ。
+"""Arduino Uno / XIAO ESP32-C3とのUSBシリアル通信を担当するブリッジ。
 
 ESP32から "COIN" という行を受け取ったらコールバックを呼び、その戻り値
 (景品が使うホッパー記号 "a"/"b"、どちらも使わないなら None)に応じて
@@ -17,14 +17,22 @@ import serial.tools.list_ports
 
 logger = logging.getLogger(__name__)
 
-# XIAO ESP32-C3のUSB CDC(ネイティブUSBシリアル)によく見られる特徴。
-# 環境によって表示のされ方が違うため、複数の手がかりで探す。
-_ESPRESSIF_USB_VID = 0x303A
-_KNOWN_DESCRIPTION_KEYWORDS = ("cp210", "ch340", "ch9102", "usb serial", "esp32")
+# Arduino Uno R3、互換機、XIAO ESP32-C3によく見られる特徴。
+# 純正Unoと互換UnoではUSBチップが異なるため、複数の手がかりで探す。
+_KNOWN_USB_VIDS = {0x2341, 0x2A03, 0x303A}
+_KNOWN_DESCRIPTION_KEYWORDS = (
+    "arduino",
+    "usb serial",
+    "usb-serial",
+    "cp210",
+    "ch340",
+    "ch9102",
+    "esp32",
+)
 
 
 def find_serial_port(warn=True):
-    """接続されていそうなESP32のシリアルポートを推測する。見つからなければNone。
+    """接続されていそうな制御基板のポートを推測する。見つからなければNone。
 
     warn=False にすると、見つからなかったときの警告ログを出さない
     (再接続の待機中に何度も呼ぶ場合にログが埋まらないようにするため)。
@@ -32,7 +40,7 @@ def find_serial_port(warn=True):
     ports = list(serial.tools.list_ports.comports())
 
     for port in ports:
-        if port.vid == _ESPRESSIF_USB_VID:
+        if port.vid in _KNOWN_USB_VIDS:
             return port.device
 
     for port in ports:
@@ -43,7 +51,7 @@ def find_serial_port(warn=True):
     if warn:
         if ports:
             logger.warning(
-                "ESP32らしきポートが見つかりませんでした。候補: %s",
+                "Arduino/ESP32らしきポートが見つかりませんでした。候補: %s",
                 ", ".join(p.device for p in ports),
             )
         else:
@@ -78,6 +86,14 @@ class SerialBridge:
         self._serial = None
         self._stop_event = threading.Event()
         self._thread = None
+
+    def get_status(self):
+        """管理画面に表示するUSB接続状態を返す。"""
+        return {
+            "enabled": True,
+            "connected": self._serial is not None,
+            "port": self.port,
+        }
 
     def start(self):
         if self.port:
@@ -236,3 +252,4 @@ class SerialBridge:
                 self._serial.close()
             except (serial.SerialException, OSError):
                 pass
+            self._serial = None

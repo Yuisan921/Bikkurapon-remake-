@@ -3,28 +3,109 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>びっくらポン 管理画面</title>
+  <title>びっくらぽん 管理</title>
   <link rel="stylesheet" href="{{ url_for('static', filename='css/admin.css') }}">
 </head>
 <body>
-  <h1>景品在庫管理</h1>
-  <p class="hint">
-    確率の欄はEnterキーか入力欄から出る(フォーカスを外す)と即座に反映されます。
-    合計が100%になっていなくても抽選自体は動きます(内部的には比率として扱われます)が、
-    見やすさのため合計100%になるよう調整することをおすすめします。
-  </p>
-  <table id="stock-table">
-    <thead>
-      <tr>
-        <th>景品</th>
-        <th>当選確率(編集可)</th>
-        <th>残数</th>
-        <th>在庫を更新</th>
-      </tr>
-    </thead>
-    <tbody></tbody>
-  </table>
-  <p><a href="/">&larr; ゲーム画面に戻る</a></p>
+  <header class="app-header">
+    <div class="brand-mark">祭</div>
+    <div class="brand-copy">
+      <span>妖怪まつり</span>
+      <strong>びっくらぽん 管理</strong>
+    </div>
+    <div id="header-status" class="header-status is-loading">
+      <span></span><b>確認中</b>
+    </div>
+  </header>
+
+  <main class="dashboard">
+    <section class="welcome">
+      <div>
+        <p class="section-label">CONTROL DESK</p>
+        <h1>今日のゲームを準備しよう</h1>
+        <p>難しい設定は不要です。接続・在庫・確率をこの画面だけで確認できます。</p>
+      </div>
+      <div class="window-actions">
+        <button id="show-game-button" class="button secondary" type="button">ゲーム画面を表示</button>
+        <button id="fullscreen-button" class="button primary desktop-only" type="button" hidden>ゲーム画面を全画面にする</button>
+      </div>
+    </section>
+
+    <section class="status-grid" aria-label="ゲーム状態">
+      <article id="hardware-card" class="status-card is-loading">
+        <div class="status-icon usb-icon" aria-hidden="true">USB</div>
+        <div>
+          <span class="card-label">Arduino Uno</span>
+          <strong id="hardware-title">接続を確認中</strong>
+          <small id="hardware-detail">少し待ってください</small>
+        </div>
+      </article>
+      <article id="stock-card" class="status-card is-loading">
+        <div class="status-icon capsule-icon" aria-hidden="true"></div>
+        <div>
+          <span class="card-label">カプセル在庫</span>
+          <strong id="stock-title">確認中</strong>
+          <small id="stock-detail">残り数を読み込んでいます</small>
+        </div>
+      </article>
+      <article id="chance-card" class="status-card is-loading">
+        <div class="status-icon chance-icon" aria-hidden="true">%</div>
+        <div>
+          <span class="card-label">当たり確率</span>
+          <strong id="chance-title">確認中</strong>
+          <small id="chance-detail">現在の設定</small>
+        </div>
+      </article>
+    </section>
+
+    <aside id="hardware-help" class="notice warning" hidden>
+      <div class="notice-mark">!</div>
+      <div>
+        <strong>Arduinoがまだ見つかりません</strong>
+        <p>USBケーブルでUno R3を接続してください。接続後は自動で認識するので、アプリの再起動は不要です。</p>
+      </div>
+    </aside>
+
+    <section class="panel quick-panel">
+      <div class="panel-heading">
+        <div>
+          <p class="section-label">SCREEN TEST</p>
+          <h2>画面演出をテスト</h2>
+        </div>
+        <span class="safe-chip">在庫は減りません</span>
+      </div>
+      <p class="panel-description">本番前にゲーム画面の見え方だけを確認できます。カプセルやサーボは動きません。</p>
+      <div id="preview-buttons" class="preview-buttons"></div>
+    </section>
+
+    <section class="panel inventory-panel">
+      <div class="panel-heading">
+        <div>
+          <p class="section-label">PRIZE SETTINGS</p>
+          <h2>在庫と当たりやすさ</h2>
+        </div>
+        <span id="probability-total" class="total-chip">合計 100%</span>
+      </div>
+      <p class="panel-description">確率は片方を保存すると、もう片方が自動で調整されます。</p>
+      <div id="prize-list" class="prize-list"></div>
+    </section>
+
+    <section class="panel guide-panel">
+      <div class="panel-heading">
+        <div>
+          <p class="section-label">START GUIDE</p>
+          <h2>本番前の3ステップ</h2>
+        </div>
+      </div>
+      <ol class="start-guide">
+        <li><span>1</span><div><strong>USBをつなぐ</strong><small>上のArduino表示が緑色になればOK</small></div></li>
+        <li><span>2</span><div><strong>在庫を合わせる</strong><small>ホッパーに入れたカプセル数を入力</small></div></li>
+        <li><span>3</span><div><strong>コインを1枚通す</strong><small>センサー・画面・排出をまとめて確認</small></div></li>
+      </ol>
+    </section>
+  </main>
+
+  <div id="toast" class="toast" role="status" aria-live="polite"></div>
 
   <script src="{{ url_for('static', filename='vendor/socket.io.min.js') }}"></script>
   <script src="{{ url_for('static', filename='js/admin.js') }}"></script>
