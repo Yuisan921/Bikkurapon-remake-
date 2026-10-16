@@ -1,6 +1,10 @@
 #include <Servo.h>
 
+// 赤外線センサーのデジタル出力(OUT)をD2へ接続します。
+// 一般的な障害物センサーモジュールは遮られたときLOWになります。
+// お使いのセンサーが逆の場合は LOW を HIGH に変えてください。
 const int COIN_SENSOR_PIN = 2;
+const int COIN_DETECTED_LEVEL = LOW;
 
 const int SERVO_A_PIN = 9;   // 当たり
 const int SERVO_B_PIN = 10;  // はずれ
@@ -12,6 +16,7 @@ const int SERVO_B_DISPENSE_ANGLE = 90;
 
 const unsigned long SERVO_HOLD_MS = 1000;
 const unsigned long DEBOUNCE_MS = 300;
+const unsigned long SENSOR_CLEAR_MS = 150;
 const unsigned long RESPONSE_TIMEOUT_MS = 3000;
 
 Servo servoA;
@@ -19,6 +24,7 @@ Servo servoB;
 
 unsigned long lastTriggerMs = 0;
 unsigned long coinSequence = 0;
+unsigned long sensorClearSinceMs = 0;
 bool coinArmed = true;
 
 void setup() {
@@ -34,19 +40,28 @@ void setup() {
 }
 
 void loop() {
-  bool coinLow = digitalRead(COIN_SENSOR_PIN) == LOW;
+  bool coinDetected = digitalRead(COIN_SENSOR_PIN) == COIN_DETECTED_LEVEL;
+  unsigned long now = millis();
 
-  if (coinLow && coinArmed) {
-    unsigned long now = millis();
-
+  if (coinDetected) {
+    sensorClearSinceMs = 0;
     if (now - lastTriggerMs > DEBOUNCE_MS) {
-      lastTriggerMs = now;
-      coinArmed = false;
-      handleCoinInserted();
+      if (coinArmed) {
+        lastTriggerMs = now;
+        coinArmed = false;
+        handleCoinInserted();
+      }
     }
   }
-  else if (!coinLow) {
-    coinArmed = true;
+  else if (!coinArmed) {
+    // 光が一瞬戻っただけで再受付すると、1枚のコインを複数回数えることが
+    // あるため、センサーが一定時間空いたことを確認してから次を受け付けます。
+    if (sensorClearSinceMs == 0) {
+      sensorClearSinceMs = now;
+    }
+    else if (now - sensorClearSinceMs >= SENSOR_CLEAR_MS) {
+      coinArmed = true;
+    }
   }
 
   delay(20);

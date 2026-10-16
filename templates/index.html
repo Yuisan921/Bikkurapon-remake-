@@ -3,39 +3,111 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>びっくらポン!</title>
+  <title>妖怪まつり びっくらぽん</title>
   <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
 </head>
 <body>
-  <div id="stage" class="state-idle">
-    <div id="idle-screen" class="screen">
-      <h1>びっくらポン!</h1>
-      <p>コインを入れてね</p>
-    </div>
-
-    <div id="playing-screen" class="screen hidden">
-      <div class="roulette">
-        <div class="roulette-inner">?</div>
+  <main id="stage" class="state-idle" aria-live="polite">
+    <nav class="game-nav" aria-label="画面操作">
+      <div class="game-nav-brand">
+        <span>祭</span>
+        <strong>びっくらぽん</strong>
       </div>
-      <p>抽選中...</p>
+      <div class="game-nav-tabs">
+        <button class="nav-button active" type="button" aria-current="page">ゲーム</button>
+        <button id="nav-admin" class="nav-button" type="button">管理画面</button>
+      </div>
+      <div class="game-nav-actions">
+        <button id="nav-fullscreen" class="nav-button action" type="button">全画面にする</button>
+        <button id="nav-hide-game" class="nav-button action" type="button">画面を隠す</button>
+        <button id="nav-close-app" class="nav-button danger" type="button">アプリ終了</button>
+      </div>
+    </nav>
+
+    <div class="festival-sky" aria-hidden="true">
+      <div class="moon">祭</div>
+      <div class="cloud cloud-one"></div>
+      <div class="cloud cloud-two"></div>
+      <div class="lantern-row lantern-row-left"><i></i><i></i><i></i></div>
+      <div class="lantern-row lantern-row-right"><i></i><i></i><i></i></div>
+      <div class="hill hill-back"></div>
+      <div class="hill hill-front"></div>
     </div>
 
-    <div id="result-screen" class="screen hidden">
-      <h2 id="result-title"></h2>
-      <p id="result-message"></p>
+    <div id="connection-state" class="connection-pill is-offline">
+      <span class="connection-dot"></span>
+      <span class="connection-label">準備中</span>
     </div>
 
-    <!-- 景品の在庫がすべて尽きたときの画面。補充されるまで表示し続ける -->
-    <div id="soldout-screen" class="screen hidden">
-      <h2>ごめんなさい!</h2>
-      <p class="soldout-main">巫女さんを呼んでください</p>
-      <p class="soldout-sub">景品がなくなってしまいました</p>
-    </div>
-  </div>
+    <section id="idle-screen" class="screen idle-screen">
+      <p class="eyebrow"><span></span>今宵ひらく<span></span></p>
+      <h1 class="festival-title">
+        <span class="title-small">妖怪まつり</span>
+        <span class="title-main">びっくら<span>ぽん！</span></span>
+      </h1>
 
-  {% if show_debug_button %}
-  <button id="debug-insert-coin">コインを投入(テスト用)</button>
-  {% endif %}
+      <div class="yokai-mascot" aria-hidden="true">
+        <i class="mascot-ear ear-left"></i>
+        <i class="mascot-ear ear-right"></i>
+        <div class="mascot-body">
+          <span class="eye eye-left"></span>
+          <span class="eye eye-right"></span>
+          <span class="mascot-mouth"></span>
+          <span class="mascot-mark">祭</span>
+        </div>
+        <i class="mascot-tail"></i>
+      </div>
+
+      <div class="instruction-card">
+        <span class="coin-icon" aria-hidden="true">￥</span>
+        <div>
+          <strong>コインを通してね！</strong>
+          <small>妖怪たちが運だめしをはじめるよ</small>
+        </div>
+      </div>
+    </section>
+
+    <section id="playing-screen" class="screen playing-screen hidden">
+      <p class="eyebrow light"><span></span>運命の妖術<span></span></p>
+      <div class="spirit-wheel" aria-hidden="true">
+        <div class="wheel-ring ring-outer"></div>
+        <div class="wheel-ring ring-inner"></div>
+        <div class="wheel-charms">
+          <b>火</b><b>水</b><b>風</b><b>雷</b><b>福</b><b>縁</b>
+        </div>
+        <div id="roulette-symbol" class="roulette-symbol">?</div>
+      </div>
+      <h2>妖怪たちが相談中…</h2>
+      <p id="playing-caption" class="playing-caption">どのカプセルにしようかな？</p>
+      <div class="loading-dots" aria-hidden="true"><i></i><i></i><i></i></div>
+    </section>
+
+    <section id="result-screen" class="screen result-screen hidden">
+      <p class="result-kicker">妖怪おみくじ</p>
+      <div class="result-medallion" aria-hidden="true">
+        <span id="result-symbol">福</span>
+      </div>
+      <h2 id="result-title">当たり！</h2>
+      <p id="result-message">カプセルを受け取ってね</p>
+    </section>
+
+    <section id="error-screen" class="screen error-screen hidden">
+      <div class="error-seal">!</div>
+      <h2>うまく排出できませんでした</h2>
+      <p>近くの係の人を呼んでね</p>
+    </section>
+
+    <section id="soldout-screen" class="screen soldout-screen hidden">
+      <div class="closed-sign">
+        <span>ただいま</span>
+        <strong>準備中</strong>
+      </div>
+      <h2>カプセルがなくなりました</h2>
+      <p>近くの巫女さんを呼んでね</p>
+    </section>
+
+    <div id="confetti" class="confetti" aria-hidden="true"></div>
+  </main>
 
   <script src="{{ url_for('static', filename='vendor/socket.io.min.js') }}"></script>
   <script src="{{ url_for('static', filename='js/main.js') }}"></script>

@@ -1,25 +1,26 @@
 """びっくらポン風カプセルゲームの本体サーバー(ノートPC側)。
 
-コインセンサー/サーボモーターは XIAO ESP32-C3 側に直結し、ここでは
+コインセンサー/サーボモーターは Arduino Uno R3 側に直結し、ここでは
 コイン投入通知を受けて抽選するだけ。当たり用・はずれ用それぞれに
 専用のホッパー(サーボ)があり、抽選結果の "hopper" フィールド("a"/"b")
-に応じてどちらを動かすかをUSBシリアル経由でESP32に伝える。
-ESP32側はそれだけを見てサーボを動かせる(サーバー→ESP32への呼び出しは
+に応じてどちらを動かすかをUSBシリアル経由でUnoに伝える。
+Uno側はそれだけを見てサーボを動かせる(サーバー→Unoへの呼び出しは
 発生しない)。
 
-ESP32を接続しない場合(開発中など)は、ブラウザの「コインを投入(テスト用)」
-ボタンから同じ抽選ロジックを呼べる。
+Unoを接続しない場合でも、管理画面から在庫を減らさない画面演出テストを行える。
 """
 
 import json
 import hmac
 import logging
+import threading
 
 from flask import Flask, abort, jsonify, make_response, render_template, request
 from flask_socketio import SocketIO
 
 from app.browser_launcher import open_windows_after_delay
 from app.config_setup import ensure_config_dir, migrate_legacy_data
+from app.desktop_launcher import desktop_available, launch_desktop_windows
 from app.lottery import Lottery, OutOfStock
 from app.paths import BASE_DIR, BUNDLE_DIR, LEGACY_BASE_DIR
 from app.serial_bridge import SerialBridge, find_serial_port
@@ -62,20 +63,22 @@ def _broadcast_result(result):
 
 
 def run_draw_and_broadcast():
-    """抽選を1回実行し、ブラウザ画面に結果と在庫を通知する。
+    """抽選を1回実行し、ゲーム画面に結果と在庫を通知する。
 
     全景品の在庫が尽きていて抽選できない場合は、演出画面に
     "out_of_stock"(巫女さんを呼ぶ画面)を通知して None を返す。
     この場合、在庫は減らさず、ホッパーも動かさない。
     """
     try:
-        result = lottery.draw()
+        plan = lottery.reserve_draw()
     except OutOfStock:
         logger.error("在庫がすべて尽きています。巫女さんを呼ぶ画面を表示します。")
         socketio.emit("out_of_stock", {})
         socketio.emit("stock_updated", lottery.get_status())
         return None
 
+    socketio.emit("draw_started", {})
+    result = lottery.commit_draw(plan["reservation_id"])
     _broadcast_result(result)
     return result
 
@@ -90,6 +93,8 @@ def prepare_hardware_draw():
         socketio.emit("stock_updated", lottery.get_status())
         return None
 
+    socketio.emit("draw_started", {})
+
     # カプセルを出さない完全ハズレは物理ACKが不要なので即時確定する。
     if plan.get("hopper") is None:
         result = lottery.commit_draw(plan["reservation_id"])
@@ -99,9 +104,10 @@ def prepare_hardware_draw():
 
 
 def finish_hardware_draw(reservation_id, success):
-    """ESP32の排出完了応答を受け、成功時だけ在庫と表示を確定する。"""
+    """制御基板の排出完了応答を受け、成功時だけ在庫と表示を確定する。"""
     if not success:
         lottery.cancel_draw(reservation_id)
+        socketio.emit("draw_cancelled", {})
         socketio.emit("stock_updated", lottery.get_status())
         logger.error("カプセル排出を確認できなかったため抽選を取り消しました。")
         return None
@@ -115,7 +121,7 @@ def finish_hardware_draw(reservation_id, success):
 
 
 def handle_coin_inserted_from_serial():
-    """ESP32からUSBシリアルで "COIN" を受け取ったときに呼ばれる。
+    """UnoからUSBシリアルで "COIN" を受け取ったときに呼ばれる。
     戻り値は動かすべきホッパー記号("a"/"b"。どちらも使わない・在庫切れなら None)。
     """
     return prepare_hardware_draw()
@@ -157,7 +163,14 @@ serial_bridge = None
 # からしか受け付けない。別端末(スマホの管理画面や、WiFi版ESP32)から使いたい
 # 場合だけ、config/settings.json で明示的に許可する(README参照)。
 _LOOPBACK_ADDRESSES = {"127.0.0.1", "::1", "::ffff:127.0.0.1"}
-_ADMIN_PATHS = {"/admin", "/api/restock", "/api/set_stock", "/api/set_probability"}
+_ADMIN_PATHS = {
+    "/admin",
+    "/api/system_status",
+    "/api/preview_result",
+    "/api/restock",
+    "/api/set_stock",
+    "/api/set_probability",
+}
 _DEVICE_PATHS = {"/api/insert_coin", "/api/dispense_ack"}
 
 
@@ -200,9 +213,7 @@ def _json_payload():
 
 @app.route("/")
 def index():
-    return render_template(
-        "index.html", show_debug_button=settings.get("show_debug_button", True)
-    )
+    return render_template("index.html")
 
 
 @app.route("/admin")
@@ -215,9 +226,36 @@ def api_status():
     return jsonify({"prizes": lottery.get_status()})
 
 
+@app.route("/api/system_status")
+def api_system_status():
+    """管理画面用。USB接続とゲームの準備状態を分かりやすく返す。"""
+    if serial_bridge is not None:
+        hardware = serial_bridge.get_status()
+    else:
+        port_setting = settings.get("serial_port")
+        hardware = {
+            "enabled": bool(port_setting),
+            "connected": False,
+            "port": None if port_setting == "auto" else port_setting,
+        }
+    return jsonify({"hardware": hardware, "ready": lottery.has_stock()})
+
+
+@app.route("/api/preview_result", methods=["POST"])
+def api_preview_result():
+    """在庫やホッパーを動かさず、選んだ結果の画面演出だけを確認する。"""
+    prize_id = _field(_json_payload(), "prize_id", str)
+    prize = next((item for item in lottery.get_status() if item["id"] == prize_id), None)
+    if prize is None:
+        return jsonify({"error": "unknown prize"}), 404
+    socketio.emit("draw_started", {"preview": True})
+    socketio.emit("draw_result", {**prize, "preview": True})
+    return jsonify({"ok": True})
+
+
 @app.route("/api/insert_coin", methods=["POST"])
 def api_insert_coin():
-    """ブラウザのテストボタンからコイン投入を通知するエンドポイント。"""
+    """ローカルテストまたはWi-Fi制御基板からコイン投入を通知する。"""
     # ローカルのテストボタンは実物を動かさないので即時確定する。
     if request.remote_addr in _LOOPBACK_ADDRESSES:
         result = run_draw_and_broadcast()
@@ -291,22 +329,38 @@ def main():
     port = settings.get("port", 5000)
     serial_bridge = start_serial_bridge()
 
-    # サーバー起動が終わるのを少し待ってから、演出画面(キオスクモード)と
-    # 管理画面を自動でブラウザで開く。config/settings.json の
-    # auto_open_browser を false にすると無効化できる。
-    open_windows_after_delay(f"http://localhost:{port}", settings)
+    def run_server():
+        # 既定ではこのPC自身からしか接続できない。Wi-Fi版の機器や別端末を
+        # 明示的に使う場合だけ settings.json の host を変更する。
+        socketio.run(
+            app,
+            host=settings.get("host", "127.0.0.1"),
+            port=port,
+            allow_unsafe_werkzeug=True,
+            use_reloader=False,
+        )
 
-    # 文化祭会場のローカルネットワーク内でのみ動かす前提の小規模キオスクアプリのため、
-    # 開発用サーバーをそのまま使う(tty無しで起動されるケースに対応するため
-    # allow_unsafe_werkzeug=True を指定)。
-    # 既定ではこのPC自身からしか接続できない("127.0.0.1")。WiFi版ESP32や
-    # 別端末の管理画面を使う場合だけ settings.json の host を "0.0.0.0" にする。
-    socketio.run(
-        app,
-        host=settings.get("host", "127.0.0.1"),
-        port=port,
-        allow_unsafe_werkzeug=True,
-    )
+    base_url = f"http://127.0.0.1:{port}"
+
+    # 通常利用は専用ウィンドウで表示する。利用者はWebサーバーやブラウザーを
+    # 意識する必要がなく、デスクトップのアイコンを1回起動するだけでよい。
+    if settings.get("desktop_mode", True) and desktop_available():
+        server_thread = threading.Thread(target=run_server, daemon=True)
+        server_thread.start()
+        try:
+            launch_desktop_windows(base_url, settings)
+        except Exception:  # noqa: BLE001 - 表示失敗時も従来方式で使用可能にする
+            logger.exception("専用ウィンドウを開けなかったためブラウザー表示へ切り替えます。")
+            open_windows_after_delay(base_url, settings, delay_seconds=0.2)
+            server_thread.join()
+        finally:
+            if serial_bridge is not None:
+                serial_bridge.stop()
+        return
+
+    logger.warning("専用画面を利用できないため、ブラウザー表示で起動します。")
+    open_windows_after_delay(base_url, settings)
+    run_server()
 
 
 if __name__ == "__main__":

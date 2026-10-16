@@ -4,49 +4,116 @@ const screens = {
   idle: document.getElementById("idle-screen"),
   playing: document.getElementById("playing-screen"),
   result: document.getElementById("result-screen"),
+  error: document.getElementById("error-screen"),
   soldout: document.getElementById("soldout-screen"),
 };
+
 const stage = document.getElementById("stage");
+const connectionState = document.getElementById("connection-state");
+const connectionLabel = connectionState.querySelector(".connection-label");
+const rouletteSymbol = document.getElementById("roulette-symbol");
+const playingCaption = document.getElementById("playing-caption");
 const resultTitle = document.getElementById("result-title");
 const resultMessage = document.getElementById("result-message");
+const resultSymbol = document.getElementById("result-symbol");
+const confetti = document.getElementById("confetti");
+const navAdmin = document.getElementById("nav-admin");
+const navFullscreen = document.getElementById("nav-fullscreen");
+const navHideGame = document.getElementById("nav-hide-game");
+const navCloseApp = document.getElementById("nav-close-app");
 
-const RESULT_DISPLAY_MS = 4000;
-const PLAYING_DURATION_MS = 2500;
+const MIN_PLAYING_MS = 3200;
+const RESULT_DISPLAY_MS = 5200;
+const ERROR_DISPLAY_MS = 5000;
+const rouletteSymbols = ["火", "水", "風", "雷", "福", "縁", "祭"];
+const captions = [
+  "どのカプセルにしようかな？",
+  "運気を集めています…",
+  "妖怪たちの会議は大さわぎ！",
+  "もうすぐ決まるよ！",
+];
 
-let playingTimer = null;
-let resetTimer = null;
-// 抽選演出(抽選中〜結果表示)の最中かどうか。演出中は在庫更新の通知で
-// 画面を切り替えず、演出が終わって待機画面に戻るときにまとめて反映する。
-let busy = false;
-// 抽選できる景品が1つでも残っているか。false の間は待機画面の代わりに
-// 「巫女さんを呼んでください」画面を出す。
 let hasStock = true;
+let busy = false;
+let playingStartedAt = 0;
+let rouletteTimer = null;
+let captionTimer = null;
+let revealTimer = null;
+let resetTimer = null;
+let queuedResult = null;
+
+function setFullscreenLabel(isFullscreen) {
+  navFullscreen.textContent = isFullscreen ? "全画面をやめる" : "全画面にする";
+}
+
+async function showAdminWindow() {
+  if (window.pywebview?.api) {
+    await window.pywebview.api.show_admin();
+    setFullscreenLabel(false);
+  } else {
+    window.open("/admin", "bikkurapon-admin");
+  }
+}
+
+async function toggleFullscreen() {
+  if (window.pywebview?.api) {
+    const state = await window.pywebview.api.toggle_game_fullscreen();
+    setFullscreenLabel(Boolean(state?.fullscreen));
+    return;
+  }
+
+  if (document.fullscreenElement) {
+    await document.exitFullscreen();
+  } else {
+    await document.documentElement.requestFullscreen();
+  }
+  setFullscreenLabel(Boolean(document.fullscreenElement));
+}
+
+async function hideGameWindow() {
+  if (window.pywebview?.api) {
+    await window.pywebview.api.hide_game();
+    setFullscreenLabel(false);
+  } else {
+    window.location.href = "/admin";
+  }
+}
+
+async function closeApplication() {
+  if (!window.confirm("びっくらぽんを終了しますか？")) return;
+  if (window.pywebview?.api) {
+    await window.pywebview.api.close_app();
+  } else {
+    window.close();
+  }
+}
 
 function showScreen(name) {
-  Object.values(screens).forEach((el) => el.classList.add("hidden"));
+  Object.values(screens).forEach((screen) => screen.classList.add("hidden"));
   screens[name].classList.remove("hidden");
 }
 
-function clearTimers() {
-  if (playingTimer) {
-    clearTimeout(playingTimer);
-    playingTimer = null;
-  }
-  if (resetTimer) {
-    clearTimeout(resetTimer);
-    resetTimer = null;
-  }
+function clearAnimationTimers() {
+  [rouletteTimer, captionTimer, revealTimer, resetTimer].forEach((timer) => {
+    if (timer) window.clearInterval(timer);
+  });
+  rouletteTimer = null;
+  captionTimer = null;
+  revealTimer = null;
+  resetTimer = null;
 }
 
-function showSoldout() {
-  clearTimers();
-  busy = false;
-  stage.className = "state-soldout";
-  showScreen("soldout");
+function setConnection(connected) {
+  connectionState.classList.toggle("is-online", connected);
+  connectionState.classList.toggle("is-offline", !connected);
+  connectionLabel.textContent = connected ? "ゲーム接続中" : "接続を待っています";
 }
 
-function goIdle() {
+function showIdle() {
+  clearAnimationTimers();
   busy = false;
+  queuedResult = null;
+  confetti.replaceChildren();
   if (!hasStock) {
     showSoldout();
     return;
@@ -55,58 +122,122 @@ function goIdle() {
   showScreen("idle");
 }
 
+function showSoldout() {
+  clearAnimationTimers();
+  busy = false;
+  stage.className = "state-soldout";
+  showScreen("soldout");
+}
+
+function startPlaying() {
+  clearAnimationTimers();
+  busy = true;
+  queuedResult = null;
+  playingStartedAt = Date.now();
+  stage.className = "state-playing";
+  showScreen("playing");
+
+  let symbolIndex = 0;
+  rouletteTimer = window.setInterval(() => {
+    symbolIndex = (symbolIndex + 1) % rouletteSymbols.length;
+    rouletteSymbol.textContent = rouletteSymbols[symbolIndex];
+  }, 110);
+
+  let captionIndex = 0;
+  playingCaption.textContent = captions[captionIndex];
+  captionTimer = window.setInterval(() => {
+    captionIndex = (captionIndex + 1) % captions.length;
+    playingCaption.textContent = captions[captionIndex];
+  }, 850);
+}
+
+function makeConfetti() {
+  confetti.replaceChildren();
+  const colors = ["#ffcb3c", "#ef4b45", "#50c9b5", "#ffffff", "#f18bb7"];
+  for (let index = 0; index < 36; index += 1) {
+    const piece = document.createElement("i");
+    piece.style.setProperty("--x", `${Math.random() * 100}vw`);
+    piece.style.setProperty("--delay", `${Math.random() * 0.8}s`);
+    piece.style.setProperty("--duration", `${2.2 + Math.random() * 1.8}s`);
+    piece.style.setProperty("--rotation", `${Math.random() * 720 - 360}deg`);
+    piece.style.background = colors[index % colors.length];
+    confetti.appendChild(piece);
+  }
+}
+
+function revealResult(result) {
+  window.clearInterval(rouletteTimer);
+  window.clearInterval(captionTimer);
+  rouletteTimer = null;
+  captionTimer = null;
+
+  const isWinner = result.id === "atari" || String(result.hopper).toLowerCase() === "a";
+  stage.className = `state-result ${isWinner ? "state-atari" : "state-hazure"}`;
+  resultSymbol.textContent = isWinner ? "福" : "縁";
+  resultTitle.textContent = result.name;
+  resultMessage.textContent = result.preview
+    ? "これは画面だけのテストです"
+    : isWinner
+      ? "大当たりのカプセルを受け取ってね！"
+      : "参加賞のカプセルを受け取ってね！";
+  showScreen("result");
+  makeConfetti();
+  resetTimer = window.setTimeout(showIdle, RESULT_DISPLAY_MS);
+}
+
+function queueResult(result) {
+  if (!busy) startPlaying();
+  queuedResult = result;
+  const elapsed = Date.now() - playingStartedAt;
+  revealTimer = window.setTimeout(() => {
+    if (queuedResult) revealResult(queuedResult);
+    queuedResult = null;
+  }, Math.max(0, MIN_PLAYING_MS - elapsed));
+}
+
+function showDispenseError() {
+  clearAnimationTimers();
+  busy = true;
+  stage.className = "state-error";
+  showScreen("error");
+  resetTimer = window.setTimeout(showIdle, ERROR_DISPLAY_MS);
+}
+
 function hasAnyStock(prizes) {
-  // サーバー側の抽選と同じ判定: 在庫無制限(null)か、残数が1以上の景品があるか
-  return prizes.some((p) => p.remaining === null || p.remaining > 0);
+  return prizes.some((prize) => prize.remaining === null || prize.remaining > 0);
 }
 
 function applyStock(prizes) {
   hasStock = hasAnyStock(prizes);
-  if (!busy) {
-    goIdle();
-  }
+  if (!busy) showIdle();
 }
 
 socket.on("connect", () => {
-  // 画面を開いた直後・再接続時に、現在の在庫状況を見て待機画面か在庫切れ画面を決める
+  setConnection(true);
   fetch("/api/status")
-    .then((res) => res.json())
+    .then((response) => response.json())
     .then((data) => applyStock(data.prizes))
-    .catch(goIdle);
+    .catch(() => setConnection(false));
 });
 
+socket.on("disconnect", () => setConnection(false));
 socket.on("stock_updated", applyStock);
-
+socket.on("draw_started", startPlaying);
+socket.on("draw_result", queueResult);
+socket.on("draw_cancelled", showDispenseError);
 socket.on("out_of_stock", () => {
   hasStock = false;
   showSoldout();
 });
 
-socket.on("draw_result", (result) => {
-  clearTimers();
-  busy = true;
-
-  stage.className = "state-playing";
-  showScreen("playing");
-
-  playingTimer = setTimeout(() => {
-    playingTimer = null;
-    stage.className = `state-result state-${result.id}`;
-    resultTitle.textContent = result.name;
-    if (result.remaining === 0) {
-      resultMessage.textContent = `${result.name}!(この景品は在庫終了です)`;
-    } else {
-      resultMessage.textContent = "カプセルが出てくるよ!";
-    }
-    showScreen("result");
-
-    resetTimer = setTimeout(goIdle, RESULT_DISPLAY_MS);
-  }, PLAYING_DURATION_MS);
+navAdmin.addEventListener("click", showAdminWindow);
+navFullscreen.addEventListener("click", toggleFullscreen);
+navHideGame.addEventListener("click", hideGameWindow);
+navCloseApp.addEventListener("click", closeApplication);
+document.addEventListener("fullscreenchange", () => {
+  if (!window.pywebview?.api) setFullscreenLabel(Boolean(document.fullscreenElement));
 });
-
-const debugButton = document.getElementById("debug-insert-coin");
-if (debugButton) {
-  debugButton.addEventListener("click", () => {
-    fetch("/api/insert_coin", { method: "POST" });
-  });
-}
+window.addEventListener("pywebviewready", async () => {
+  const state = await window.pywebview.api.get_window_state();
+  setFullscreenLabel(Boolean(state?.fullscreen));
+});
