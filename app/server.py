@@ -13,12 +13,15 @@ Unoを接続しない場合でも、管理画面から在庫を減らさない�
 import json
 import hmac
 import logging
+import socket
+import urllib.error
+import urllib.request
 from logging.handlers import RotatingFileHandler
 
 from flask import Flask, abort, jsonify, make_response, render_template, request
 from flask_socketio import SocketIO
 
-from app.browser_launcher import open_windows_after_delay
+from app.browser_launcher import open_windows, open_windows_after_delay
 from app.config_setup import ensure_config_dir, migrate_legacy_data
 from app.lottery import Lottery, OutOfStock
 from app.paths import BASE_DIR, BUNDLE_DIR, LEGACY_BASE_DIR
@@ -172,6 +175,30 @@ def start_serial_bridge():
 
 
 serial_bridge = None
+
+
+def is_bikkurapon_server_running(base_url, timeout_seconds=0.6):
+    """同じPCですでに起動している本アプリのサーバーか確認する。"""
+    opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
+    try:
+        with opener.open(f"{base_url}/api/status", timeout=timeout_seconds) as response:
+            payload = json.load(response)
+        return response.status == 200 and isinstance(payload.get("prizes"), list)
+    except (OSError, ValueError, urllib.error.URLError):
+        return False
+
+
+def find_available_port(host, preferred_port, attempts=20):
+    """既定ポートが旧プロセス等に使われていても起動できるポートを返す。"""
+    bind_host = "127.0.0.1" if host in {"0.0.0.0", "::"} else host
+    for port in range(preferred_port, preferred_port + attempts):
+        try:
+            with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as probe:
+                probe.bind((bind_host, port))
+            return port
+        except OSError:
+            continue
+    return None
 
 
 # --- アクセス制限 -------------------------------------------------------
@@ -343,7 +370,24 @@ def api_set_probability():
 
 def main():
     global serial_bridge
-    port = settings.get("port", 5000)
+    host = settings.get("host", "127.0.0.1")
+    preferred_port = int(settings.get("port", 5000))
+
+    preferred_url = f"http://127.0.0.1:{preferred_port}"
+    if is_bikkurapon_server_running(preferred_url):
+        logger.info("すでに起動中のびっくらぽん画面を開きます。")
+        open_windows(preferred_url, settings)
+        return
+
+    port = find_available_port(host, preferred_port)
+    if port is None:
+        logger.error("利用できる通信ポートが見つからないため起動できません。")
+        if serial_bridge is not None:
+            serial_bridge.stop()
+        return
+    if port != preferred_port:
+        logger.warning("ポート%dが使用中のため、ポート%dで起動します。", preferred_port, port)
+
     serial_bridge = start_serial_bridge()
 
     def run_server():
@@ -351,7 +395,7 @@ def main():
         # 明示的に使う場合だけ settings.json の host を変更する。
         socketio.run(
             app,
-            host=settings.get("host", "127.0.0.1"),
+            host=host,
             port=port,
             allow_unsafe_werkzeug=True,
             use_reloader=False,

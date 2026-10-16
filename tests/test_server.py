@@ -1,4 +1,5 @@
 import json
+import socket
 from unittest import mock
 
 import pytest
@@ -290,3 +291,16 @@ def test_unknown_prize_returns_404(server):
     )
 
     assert response.status_code == 404
+
+
+def test_finds_another_port_when_preferred_port_is_in_use(server_module):
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as occupied:
+        occupied.bind(("127.0.0.1", 0))
+        preferred_port = occupied.getsockname()[1]
+
+        selected = server_module.find_available_port(
+            "127.0.0.1", preferred_port, attempts=20
+        )
+
+    assert selected is not None
+    assert selected != preferred_port

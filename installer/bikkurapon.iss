@@ -10,7 +10,7 @@
 ; 含まれていて発生する不具合を避けられる。
 
 #define MyAppName "妖怪まつり びっくらぽん"
-#define MyAppVersion "2.0.1"
+#define MyAppVersion "2.0.2"
 #define MyAppExeName "bikkurapon.exe"
 
 [Setup]
@@ -42,3 +42,16 @@ Name: "{autodesktop}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"; Tasks: de
 
 [Run]
 Filename: "{app}\{#MyAppExeName}"; Description: "{#MyAppName}を起動する"; Flags: postinstall nowait skipifsilent
+
+[Code]
+function PrepareToInstall(var NeedsRestart: Boolean): String;
+var
+  ResultCode: Integer;
+begin
+  { 旧版が画面を閉じた後もバックグラウンドに残っている場合があるため、
+    ファイルを置き換える前に本アプリのプロセスだけを終了する。 }
+  Exec(ExpandConstant('{cmd}'),
+    '/C taskkill /F /IM bikkurapon.exe >nul 2>&1',
+    '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
+  Result := '';
+end;
