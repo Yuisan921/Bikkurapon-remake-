@@ -14,7 +14,6 @@ a = Analysis(
     ],
     hiddenimports=[
         'engineio.async_drivers.threading',
-        'webview.platforms.edgechromium',
     ],
     hookspath=[],
     hooksconfig={},

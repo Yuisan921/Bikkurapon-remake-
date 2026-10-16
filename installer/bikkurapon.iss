@@ -10,7 +10,7 @@
 ; 含まれていて発生する不具合を避けられる。
 
 #define MyAppName "妖怪まつり びっくらぽん"
-#define MyAppVersion "2.0"
+#define MyAppVersion "2.0.1"
 #define MyAppExeName "bikkurapon.exe"
 
 [Setup]

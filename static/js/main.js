@@ -80,7 +80,7 @@ async function hideGameWindow() {
 }
 
 async function closeApplication() {
-  if (!window.confirm("びっくらぽんを終了しますか？")) return;
+  if (!window.confirm("ゲーム画面を閉じますか？\n管理画面からもう一度開けます。")) return;
   if (window.pywebview?.api) {
     await window.pywebview.api.close_app();
   } else {

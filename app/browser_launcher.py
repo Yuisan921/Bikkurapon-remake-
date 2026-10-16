@@ -1,4 +1,4 @@
-"""起動時にブラウザで演出画面・管理画面を自動的に開くための処理。
+"""起動時に演出画面・管理画面を独立したアプリ画面で開く処理。
 
 これまでは scripts/start_bikkurapon.bat がこの役割を持っていたが、
 実行環境によっては(例: Windowsのユーザー名が非ASCII文字を含む場合)
@@ -17,21 +17,23 @@ from pathlib import Path
 
 logger = logging.getLogger(__name__)
 
-# Windowsでよくある Chrome のインストール先
-_WINDOWS_CHROME_CANDIDATES = [
+# Windows標準のEdgeを最優先し、未導入の場合だけChrome系へフォールバックする。
+_WINDOWS_BROWSER_CANDIDATES = [
+    r"C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe",
+    r"C:\Program Files\Microsoft\Edge\Application\msedge.exe",
     r"C:\Program Files\Google\Chrome\Application\chrome.exe",
     r"C:\Program Files (x86)\Google\Chrome\Application\chrome.exe",
 ]
 
 
-def find_chrome():
-    """Chrome/Chromiumの実行ファイルパスを探す。見つからなければNone。"""
-    for name in ("chrome", "google-chrome", "chromium", "chromium-browser"):
+def find_app_browser():
+    """アプリ表示に対応するEdge/Chromeを探す。見つからなければNone。"""
+    for name in ("msedge", "chrome", "google-chrome", "chromium", "chromium-browser"):
         path = shutil.which(name)
         if path:
             return path
 
-    for candidate in _WINDOWS_CHROME_CANDIDATES:
+    for candidate in _WINDOWS_BROWSER_CANDIDATES:
         if Path(candidate).exists():
             return candidate
 
@@ -39,7 +41,7 @@ def find_chrome():
 
 
 def _profile_dir(name):
-    """演出画面/管理画面それぞれ専用のChromeプロファイル置き場。
+    """演出画面/管理画面それぞれ専用のブラウザープロファイル置き場。
 
     同じプロファイル(=同じChromeプロセス)を共有すると、Chromeが2つ目
     以降のウィンドウを「既存プロセスへの新規ウィンドウ要求」として扱い、
@@ -48,7 +50,7 @@ def _profile_dir(name):
     プロファイルディレクトリを分けることで、2つを完全に別プロセスとして
     独立させ、それぞれが自分に指定したフラグどおりに開くようにする。
     """
-    path = Path(tempfile.gettempdir()) / "bikkurapon-chrome-profile" / name
+    path = Path(tempfile.gettempdir()) / "bikkurapon-browser-profile" / name
     path.mkdir(parents=True, exist_ok=True)
     return str(path)
 
@@ -71,13 +73,13 @@ def open_windows(base_url, settings):
     if not settings.get("auto_open_browser", True):
         return
 
-    chrome = find_chrome()
+    browser = find_app_browser()
     admin_url = f"{base_url}/admin"
     display_url = f"{base_url}/"
 
-    if not chrome:
+    if not browser:
         logger.warning(
-            "Chrome/Chromiumが見つからなかったため、既定のブラウザで演出画面だけ開きます。"
+            "Edge/Chromeが見つからなかったため、既定のブラウザで演出画面だけ開きます。"
             "管理画面は手動で %s を開いてください。",
             admin_url,
         )
@@ -85,10 +87,11 @@ def open_windows(base_url, settings):
         return
 
     display_args = [
-        chrome,
+        browser,
         f"--user-data-dir={_profile_dir('display')}",
-        "--new-window",
         "--no-first-run",
+        "--no-default-browser-check",
+        f"--app={display_url}",
     ]
     if settings.get("kiosk_mode", False):
         display_args.append("--kiosk")
@@ -97,16 +100,15 @@ def open_windows(base_url, settings):
     position = settings.get("kiosk_window_position")
     if position:
         display_args.append(f"--window-position={position}")
-    display_args.append(display_url)
     subprocess.Popen(display_args)
 
     admin_args = [
-        chrome,
+        browser,
         f"--user-data-dir={_profile_dir('admin')}",
-        "--new-window",
         "--no-first-run",
+        "--no-default-browser-check",
+        f"--app={admin_url}",
         "--window-size=900,700",
-        admin_url,
     ]
     subprocess.Popen(admin_args)
 

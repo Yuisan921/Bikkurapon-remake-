@@ -13,10 +13,6 @@ Unoを接続しない場合でも、管理画面から在庫を減らさない�
 import json
 import hmac
 import logging
-import threading
-import time
-import urllib.error
-import urllib.request
 from logging.handlers import RotatingFileHandler
 
 from flask import Flask, abort, jsonify, make_response, render_template, request
@@ -24,7 +20,6 @@ from flask_socketio import SocketIO
 
 from app.browser_launcher import open_windows_after_delay
 from app.config_setup import ensure_config_dir, migrate_legacy_data
-from app.desktop_launcher import desktop_available, launch_desktop_windows
 from app.lottery import Lottery, OutOfStock
 from app.paths import BASE_DIR, BUNDLE_DIR, LEGACY_BASE_DIR
 from app.serial_bridge import SerialBridge, find_serial_port
@@ -177,28 +172,6 @@ def start_serial_bridge():
 
 
 serial_bridge = None
-
-
-def wait_until_server_ready(base_url, timeout_seconds=15):
-    """Webサーバーが応答してからデスクトップ画面を開く。
-
-    WindowsではWebViewの初期化とサーバー起動を同時に始めると、環境によって
-    WebView側がPythonの処理を待たせ、画面も内部サーバーも開かないことがある。
-    先にサーバーの起動完了を確認して、この競合を避ける。
-    """
-    opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
-    deadline = time.monotonic() + timeout_seconds
-    status_url = f"{base_url}/api/status"
-    while time.monotonic() < deadline:
-        try:
-            with opener.open(status_url, timeout=0.5) as response:
-                if response.status == 200:
-                    logger.info("内部サーバーの起動を確認しました: %s", base_url)
-                    return True
-        except (OSError, urllib.error.URLError):
-            time.sleep(0.1)
-    logger.error("内部サーバーを起動できませんでした: %s", base_url)
-    return False
 
 
 # --- アクセス制限 -------------------------------------------------------
@@ -386,29 +359,15 @@ def main():
 
     base_url = f"http://127.0.0.1:{port}"
 
-    # 通常利用は専用ウィンドウで表示する。利用者はWebサーバーやブラウザーを
-    # 意識する必要がなく、デスクトップのアイコンを1回起動するだけでよい。
-    if settings.get("desktop_mode", True) and desktop_available():
-        server_thread = threading.Thread(target=run_server, daemon=True)
-        server_thread.start()
-        if not wait_until_server_ready(base_url):
-            if serial_bridge is not None:
-                serial_bridge.stop()
-            return
-        try:
-            launch_desktop_windows(base_url, settings)
-        except Exception:  # noqa: BLE001 - 表示失敗時も従来方式で使用可能にする
-            logger.exception("専用ウィンドウを開けなかったためブラウザー表示へ切り替えます。")
-            open_windows_after_delay(base_url, settings, delay_seconds=0.2)
-            server_thread.join()
-        finally:
-            if serial_bridge is not None:
-                serial_bridge.stop()
-        return
-
-    logger.warning("専用画面を利用できないため、ブラウザー表示で起動します。")
-    open_windows_after_delay(base_url, settings)
-    run_server()
+    # Edgeの「アプリとして表示」を使うため、タブやアドレスバーは出ない。
+    # 画面は別プロセスに任せ、サーバーをメインスレッドで動かすことで、
+    # Windows環境でウィンドウ表示後に応答しなくなる問題を避ける。
+    open_windows_after_delay(base_url, settings, delay_seconds=0.8)
+    try:
+        run_server()
+    finally:
+        if serial_bridge is not None:
+            serial_bridge.stop()
 
 
 if __name__ == "__main__":
