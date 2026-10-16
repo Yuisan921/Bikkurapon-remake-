@@ -14,6 +14,9 @@ import json
 import hmac
 import logging
 import threading
+import time
+import urllib.error
+import urllib.request
 from logging.handlers import RotatingFileHandler
 
 from flask import Flask, abort, jsonify, make_response, render_template, request
@@ -174,6 +177,28 @@ def start_serial_bridge():
 
 
 serial_bridge = None
+
+
+def wait_until_server_ready(base_url, timeout_seconds=15):
+    """Webサーバーが応答してからデスクトップ画面を開く。
+
+    WindowsではWebViewの初期化とサーバー起動を同時に始めると、環境によって
+    WebView側がPythonの処理を待たせ、画面も内部サーバーも開かないことがある。
+    先にサーバーの起動完了を確認して、この競合を避ける。
+    """
+    opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
+    deadline = time.monotonic() + timeout_seconds
+    status_url = f"{base_url}/api/status"
+    while time.monotonic() < deadline:
+        try:
+            with opener.open(status_url, timeout=0.5) as response:
+                if response.status == 200:
+                    logger.info("内部サーバーの起動を確認しました: %s", base_url)
+                    return True
+        except (OSError, urllib.error.URLError):
+            time.sleep(0.1)
+    logger.error("内部サーバーを起動できませんでした: %s", base_url)
+    return False
 
 
 # --- アクセス制限 -------------------------------------------------------
@@ -366,6 +391,10 @@ def main():
     if settings.get("desktop_mode", True) and desktop_available():
         server_thread = threading.Thread(target=run_server, daemon=True)
         server_thread.start()
+        if not wait_until_server_ready(base_url):
+            if serial_bridge is not None:
+                serial_bridge.stop()
+            return
         try:
             launch_desktop_windows(base_url, settings)
         except Exception:  # noqa: BLE001 - 表示失敗時も従来方式で使用可能にする

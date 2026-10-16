@@ -60,17 +60,14 @@ jobs:
               if ($app.HasExited) {
                 throw "bikkurapon.exe exited before startup completed (exit=$($app.ExitCode))"
               }
-              try {
-                $response = Invoke-WebRequest -Uri "http://127.0.0.1:5000/api/status" -UseBasicParsing -TimeoutSec 2
-                if ($response.StatusCode -eq 200) {
-                  $ready = $true
-                  break
-                }
-              } catch {
-                # 起動中は接続できなくて正常。制限時間まで再試行する。
+              curl.exe --noproxy "*" --fail --silent --max-time 2 "http://127.0.0.1:5000/api/status" *> $null
+              if ($LASTEXITCODE -eq 0) {
+                $ready = $true
+                break
               }
             }
             if (-not $ready) {
+              Get-NetTCPConnection -LocalPort 5000 -ErrorAction SilentlyContinue | Format-List
               Get-ChildItem -Path "$PWD\dist" -Recurse -Filter "bikkurapon.log*" | ForEach-Object {
                 Write-Host "----- $($_.FullName) -----"
                 Get-Content $_.FullName
