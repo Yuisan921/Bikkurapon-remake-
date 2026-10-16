@@ -122,6 +122,8 @@ pip install -r requirements-dev.txt
 python run.py
 ```
 
+通常は `scripts/start_bikkurapon.bat` をダブルクリックするだけで起動できます。起動に失敗した場合はCMD画面を閉じずに原因を表示し、プロジェクト直下の `bikkurapon-startup.log` に詳細を保存します。
+
 macOS / Linux:
 
 ```bash

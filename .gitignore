@@ -4,6 +4,7 @@ __pycache__/
 venv/
 venv_build/
 data/stock.json
+bikkurapon-startup.log
 .DS_Store
 
 # PyInstaller/Inno Setupのビルド生成物
