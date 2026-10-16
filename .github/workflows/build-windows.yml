@@ -1,7 +1,16 @@
 name: Build Windows installer
 
+permissions:
+  contents: write
+
 on:
-  workflow_dispatch: {}
+  workflow_dispatch:
+    inputs:
+      publish_release:
+        description: "成功したインストーラーをReleaseへ公開する"
+        required: false
+        default: false
+        type: boolean
   push:
     branches: [main]
     paths:
@@ -39,6 +48,37 @@ jobs:
       - name: Build bikkurapon.exe with PyInstaller
         run: pyinstaller bikkurapon.spec
 
+      # ビルド成功だけでなく、Windows上でexeが落ちずに起動して画面を返せるか確認する。
+      - name: Smoke test packaged app on Windows
+        shell: pwsh
+        run: |
+          $app = Start-Process -FilePath "$PWD\dist\bikkurapon.exe" -PassThru
+          try {
+            $ready = $false
+            for ($attempt = 0; $attempt -lt 30; $attempt++) {
+              Start-Sleep -Seconds 1
+              if ($app.HasExited) {
+                throw "bikkurapon.exe exited before startup completed (exit=$($app.ExitCode))"
+              }
+              try {
+                $response = Invoke-WebRequest -Uri "http://127.0.0.1:5000/api/status" -UseBasicParsing -TimeoutSec 2
+                if ($response.StatusCode -eq 200) {
+                  $ready = $true
+                  break
+                }
+              } catch {
+                # 起動中は接続できなくて正常。制限時間まで再試行する。
+              }
+            }
+            if (-not $ready) {
+              throw "bikkurapon.exe did not become ready within 30 seconds"
+            }
+          } finally {
+            if (-not $app.HasExited) {
+              Stop-Process -Id $app.Id -Force
+            }
+          }
+
       - name: Install Inno Setup
         run: choco install innosetup -y --no-progress
 
@@ -57,3 +97,21 @@ jobs:
         with:
           name: BikkurapoSetup
           path: dist_installer/BikkurapoSetup.exe
+
+      - name: Publish Windows installer release
+        if: ${{ github.event_name == 'workflow_dispatch' && inputs.publish_release }}
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $tag = "v2.0.0"
+          $asset = "dist_installer\BikkurapoSetup.exe"
+          gh release view $tag *> $null
+          if ($LASTEXITCODE -eq 0) {
+            gh release upload $tag $asset --clobber
+          } else {
+            gh release create $tag $asset `
+              --target "$env:GITHUB_SHA" `
+              --title "妖怪まつり びっくらぽん v2.0.0" `
+              --notes "Windows用インストーラーです。BikkurapoSetup.exeをダウンロードして実行してください。PythonやBATファイルは不要です。"
+          }

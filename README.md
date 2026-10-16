@@ -4,6 +4,14 @@
 
 コインが赤外線センサーを通ると抽選が始まり、Arduino Uno R3が「当たり」または「参加賞」のホッパーを動かします。PCにはゲーム画面と管理画面が専用ウィンドウで表示されるため、サーバーやブラウザーを操作する必要はありません。
 
+## インストール
+
+1. [BikkurapoSetup.exe](https://github.com/Yuisan921/Bikkurapon-remake-/releases/latest/download/BikkurapoSetup.exe) をダウンロードする
+2. ダウンロードしたファイルをダブルクリックしてインストールする
+3. デスクトップの「妖怪まつり びっくらぽん」を起動する
+
+Python、CMD、BATファイルの操作は不要です。
+
 ## 普段の使い方
 
 1. Arduino Uno R3とPCをUSBでつなぐ
