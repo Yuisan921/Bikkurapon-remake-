@@ -114,7 +114,7 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          $tag = "v2.0.2"
+          $tag = "v2.0.3"
           $asset = "dist_installer\BikkurapoSetup.exe"
           gh release view $tag *> $null
           if ($LASTEXITCODE -eq 0) {
@@ -122,6 +122,6 @@ jobs:
           } else {
             gh release create $tag $asset `
               --target "$env:GITHUB_SHA" `
-              --title "妖怪まつり びっくらぽん v2.0.2" `
+              --title "妖怪まつり びっくらぽん v2.0.3" `
               --notes "Windows用インストーラーです。BikkurapoSetup.exeをダウンロードして実行してください。PythonやBATファイルは不要です。"
           }

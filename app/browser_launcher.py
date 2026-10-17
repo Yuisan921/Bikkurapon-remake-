@@ -7,6 +7,7 @@
 """
 
 import logging
+import os
 import shutil
 import subprocess
 import tempfile
@@ -50,7 +51,14 @@ def _profile_dir(name):
     プロファイルディレクトリを分けることで、2つを完全に別プロセスとして
     独立させ、それぞれが自分に指定したフラグどおりに開くようにする。
     """
-    path = Path(tempfile.gettempdir()) / "bikkurapon-browser-profile" / name
+    # 起動ごとに分け、前回のEdgeがバックグラウンドに残しているロックの影響を
+    # 受けないようにする。TEMP配下なのでWindows側の一時ファイル整理対象になる。
+    path = (
+        Path(tempfile.gettempdir())
+        / "bikkurapon-browser-profile"
+        / str(os.getpid())
+        / name
+    )
     path.mkdir(parents=True, exist_ok=True)
     return str(path)
 
@@ -71,7 +79,7 @@ def open_windows(base_url, settings):
       通常ウィンドウの初期位置として使われる
     """
     if not settings.get("auto_open_browser", True):
-        return
+        return []
 
     browser = find_app_browser()
     admin_url = f"{base_url}/admin"
@@ -84,7 +92,9 @@ def open_windows(base_url, settings):
             admin_url,
         )
         webbrowser.open(display_url)
-        return
+        return []
+
+    processes = []
 
     display_args = [
         browser,
@@ -100,7 +110,7 @@ def open_windows(base_url, settings):
     position = settings.get("kiosk_window_position")
     if position:
         display_args.append(f"--window-position={position}")
-    subprocess.Popen(display_args)
+    processes.append(subprocess.Popen(display_args))
 
     admin_args = [
         browser,
@@ -110,7 +120,14 @@ def open_windows(base_url, settings):
         f"--app={admin_url}",
         "--window-size=900,700",
     ]
-    subprocess.Popen(admin_args)
+    processes.append(subprocess.Popen(admin_args))
+    return processes
+
+
+def open_default_windows(base_url):
+    """専用画面が開けなかった場合、既定ブラウザーで必ず表示する。"""
+    webbrowser.open(f"{base_url}/", new=1)
+    webbrowser.open(f"{base_url}/admin", new=1)
 
 
 def open_windows_after_delay(base_url, settings, delay_seconds=1.5):

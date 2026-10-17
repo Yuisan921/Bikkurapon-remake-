@@ -14,6 +14,8 @@ import json
 import hmac
 import logging
 import socket
+import threading
+import time
 import urllib.error
 import urllib.request
 from logging.handlers import RotatingFileHandler
@@ -21,7 +23,7 @@ from logging.handlers import RotatingFileHandler
 from flask import Flask, abort, jsonify, make_response, render_template, request
 from flask_socketio import SocketIO
 
-from app.browser_launcher import open_windows, open_windows_after_delay
+from app.browser_launcher import open_default_windows, open_windows
 from app.config_setup import ensure_config_dir, migrate_legacy_data
 from app.lottery import Lottery, OutOfStock
 from app.paths import BASE_DIR, BUNDLE_DIR, LEGACY_BASE_DIR
@@ -175,6 +177,7 @@ def start_serial_bridge():
 
 
 serial_bridge = None
+ui_connected = threading.Event()
 
 
 def is_bikkurapon_server_running(base_url, timeout_seconds=0.6):
@@ -182,8 +185,13 @@ def is_bikkurapon_server_running(base_url, timeout_seconds=0.6):
     opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
     try:
         with opener.open(f"{base_url}/api/status", timeout=timeout_seconds) as response:
+            status = response.status
             payload = json.load(response)
-        return response.status == 200 and isinstance(payload.get("prizes"), list)
+        return (
+            status == 200
+            and isinstance(payload, dict)
+            and isinstance(payload.get("prizes"), list)
+        )
     except (OSError, ValueError, urllib.error.URLError):
         return False
 
@@ -199,6 +207,16 @@ def find_available_port(host, preferred_port, attempts=20):
         except OSError:
             continue
     return None
+
+
+def wait_until_server_ready(base_url, timeout_seconds=15):
+    """内部サーバーの応答を確認してから画面を開く。"""
+    deadline = time.monotonic() + timeout_seconds
+    while time.monotonic() < deadline:
+        if is_bikkurapon_server_running(base_url, timeout_seconds=0.4):
+            return True
+        time.sleep(0.1)
+    return False
 
 
 # --- アクセス制限 -------------------------------------------------------
@@ -257,11 +275,13 @@ def _json_payload():
 
 @app.route("/")
 def index():
+    ui_connected.set()
     return render_template("index.html")
 
 
 @app.route("/admin")
 def admin():
+    ui_connected.set()
     return render_template("admin.html")
 
 
@@ -403,12 +423,33 @@ def main():
 
     base_url = f"http://127.0.0.1:{port}"
 
-    # Edgeの「アプリとして表示」を使うため、タブやアドレスバーは出ない。
-    # 画面は別プロセスに任せ、サーバーをメインスレッドで動かすことで、
-    # Windows環境でウィンドウ表示後に応答しなくなる問題を避ける。
-    open_windows_after_delay(base_url, settings, delay_seconds=0.8)
+    # サーバーを先に確実に起動し、それから通常ユーザーのEdgeを開く。
+    # 内蔵WebViewは使わないため、画面側がサーバーを止めることもない。
+    ui_connected.clear()
+    server_thread = threading.Thread(target=run_server, daemon=True)
+    server_thread.start()
+    if not wait_until_server_ready(base_url):
+        logger.error("内部サーバーの起動を確認できませんでした。")
+        if serial_bridge is not None:
+            serial_bridge.stop()
+        return
+
     try:
-        run_server()
+        open_windows(base_url, settings)
+    except OSError:
+        logger.exception("Edgeのアプリ画面を開けなかったため通常表示へ切り替えます。")
+        open_default_windows(base_url)
+
+    def ensure_visible_window():
+        # Edgeが起動要求を受け取ってもウィンドウを作らない環境がある。
+        # 画面URLへのアクセスが無ければ、既定ブラウザーで確実に開き直す。
+        if not ui_connected.wait(timeout=6):
+            logger.warning("専用画面を確認できないため通常ブラウザーで開きます。")
+            open_default_windows(base_url)
+
+    threading.Thread(target=ensure_visible_window, daemon=True).start()
+    try:
+        server_thread.join()
     finally:
         if serial_bridge is not None:
             serial_bridge.stop()

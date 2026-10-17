@@ -10,7 +10,7 @@
 ; 含まれていて発生する不具合を避けられる。
 
 #define MyAppName "妖怪まつり びっくらぽん"
-#define MyAppVersion "2.0.2"
+#define MyAppVersion "2.0.3"
 #define MyAppExeName "bikkurapon.exe"
 
 [Setup]
@@ -41,7 +41,7 @@ Name: "{group}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"
 Name: "{autodesktop}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"; Tasks: desktopicon
 
 [Run]
-Filename: "{app}\{#MyAppExeName}"; Description: "{#MyAppName}を起動する"; Flags: postinstall nowait skipifsilent
+Filename: "{app}\{#MyAppExeName}"; Description: "{#MyAppName}を起動する"; Flags: postinstall nowait skipifsilent runasoriginaluser
 
 [Code]
 function PrepareToInstall(var NeedsRestart: Boolean): String;
