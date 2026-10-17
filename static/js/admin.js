@@ -18,9 +18,13 @@ const toast = document.getElementById("toast");
 const showGameButton = document.getElementById("show-game-button");
 const fullscreenButton = document.getElementById("fullscreen-button");
 const demoDrawButton = document.getElementById("demo-draw-button");
+const hardwareTestButton = document.getElementById("hardware-test-button");
+const hardwareTestDetail = document.getElementById("hardware-test-detail");
+const autoProbabilityToggle = document.getElementById("auto-probability-toggle");
 
 let prizes = [];
 let toastTimer = null;
+let autoProbabilityByStock = false;
 
 demoDrawButton.addEventListener("click", async () => {
   demoDrawButton.disabled = true;
@@ -31,6 +35,39 @@ demoDrawButton.addEventListener("click", async () => {
     notify(error.message, true);
   } finally {
     window.setTimeout(() => { demoDrawButton.disabled = false; }, 1200);
+  }
+});
+
+hardwareTestButton.addEventListener("click", async () => {
+  if (!window.confirm("実機を1回動かします。\n排出に成功すると在庫が1個減ります。よろしいですか？")) return;
+  hardwareTestButton.disabled = true;
+  try {
+    await requestJson("/api/hardware_test", { method: "POST" });
+    notify("実機テストを開始しました。ゲーム画面と排出口を確認してください");
+  } catch (error) {
+    notify(error.message, true);
+  } finally {
+    window.setTimeout(loadSystemStatus, 1300);
+  }
+});
+
+autoProbabilityToggle.addEventListener("change", async () => {
+  const enabled = autoProbabilityToggle.checked;
+  autoProbabilityToggle.disabled = true;
+  try {
+    const data = await requestJson("/api/set_auto_probability", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ enabled }),
+    });
+    autoProbabilityByStock = data.enabled;
+    renderPrizes(data.prizes);
+    notify(enabled ? "在庫に合わせる自動調整をオンにしました" : "自動調整をオフにしました。確率を手動で変更できます");
+  } catch (error) {
+    autoProbabilityToggle.checked = !enabled;
+    notify(error.message, true);
+  } finally {
+    autoProbabilityToggle.disabled = false;
   }
 });
 
@@ -169,7 +206,7 @@ function createPrizeCard(prize, index) {
   }
 
   const probabilitySection = document.createElement("div");
-  probabilitySection.className = "control-block probability-block";
+  probabilitySection.className = `control-block probability-block${autoProbabilityByStock ? " is-automatic" : ""}`;
   probabilitySection.innerHTML = "<label>出やすさ</label>";
   const probabilityControls = document.createElement("div");
   probabilityControls.className = "probability-controls";
@@ -179,6 +216,7 @@ function createPrizeCard(prize, index) {
   range.max = "100";
   range.step = "1";
   range.value = Math.round(prize.probability * 100);
+  range.disabled = autoProbabilityByStock;
   const percentWrap = document.createElement("div");
   percentWrap.className = "percent-input";
   const number = document.createElement("input");
@@ -186,12 +224,14 @@ function createPrizeCard(prize, index) {
   number.min = "0";
   number.max = "100";
   number.value = range.value;
+  number.disabled = autoProbabilityByStock;
   const percentSign = document.createElement("span");
   percentSign.textContent = "%";
   const saveProbabilityButton = document.createElement("button");
   saveProbabilityButton.type = "button";
   saveProbabilityButton.className = "mini-button";
   saveProbabilityButton.textContent = "確率を保存";
+  saveProbabilityButton.disabled = autoProbabilityByStock;
   range.addEventListener("input", () => { number.value = range.value; });
   number.addEventListener("input", () => { range.value = number.value; });
   saveProbabilityButton.addEventListener("click", () => saveProbability(prize.id, number.value));
@@ -252,6 +292,10 @@ async function loadSystemStatus() {
       hardwareHelp.hidden = true;
       headerStatus.className = "header-status is-good";
       headerStatus.querySelector("b").textContent = data.ready ? "本番OK" : "在庫を確認";
+      hardwareTestButton.disabled = Boolean(hardware.busy);
+      hardwareTestDetail.textContent = hardware.busy
+        ? "抽選・排出を確認中です"
+        : "本番と同じ抽選・排出・在庫更新を確認";
     } else {
       hardwareTitle.textContent = hardware.enabled ? "未接続" : "USB連携オフ";
       hardwareDetail.textContent = hardware.enabled ? "USBケーブルを確認" : "設定で無効になっています";
@@ -259,10 +303,20 @@ async function loadSystemStatus() {
       hardwareHelp.hidden = !hardware.enabled;
       headerStatus.className = "header-status is-warning";
       headerStatus.querySelector("b").textContent = "要確認";
+      hardwareTestButton.disabled = true;
+      hardwareTestDetail.textContent = "Arduinoの接続を待っています";
+    }
+    if (autoProbabilityByStock !== Boolean(data.auto_probability_by_stock)) {
+      autoProbabilityByStock = Boolean(data.auto_probability_by_stock);
+      autoProbabilityToggle.checked = autoProbabilityByStock;
+      if (prizes.length) renderPrizes(prizes);
+    } else {
+      autoProbabilityToggle.checked = autoProbabilityByStock;
     }
   } catch (_error) {
     hardwareTitle.textContent = "状態を取得できません";
     setCardState(hardwareCard, "danger");
+    hardwareTestButton.disabled = true;
   }
 }
 

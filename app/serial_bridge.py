@@ -85,6 +85,8 @@ class SerialBridge:
         self.ack_timeout = ack_timeout
         self._serial = None
         self._stop_event = threading.Event()
+        self._test_requested = threading.Event()
+        self._draw_in_progress = threading.Event()
         self._thread = None
 
     def get_status(self):
@@ -93,6 +95,7 @@ class SerialBridge:
             "enabled": True,
             "connected": self._serial is not None,
             "port": self.port,
+            "busy": self._draw_in_progress.is_set() or self._test_requested.is_set(),
         }
 
     def start(self):
@@ -125,6 +128,14 @@ class SerialBridge:
                 if not self._reconnect():
                     break
                 continue
+            if self._test_requested.is_set():
+                self._draw_in_progress.set()
+                self._test_requested.clear()
+                try:
+                    self._handle_coin()
+                finally:
+                    self._draw_in_progress.clear()
+                continue
             try:
                 raw_line = self._serial.readline()
             except (serial.SerialException, OSError) as exc:
@@ -140,9 +151,22 @@ class SerialBridge:
 
             if line == "COIN" or line.startswith("COIN:"):
                 coin_id = line.partition(":")[2] or None
-                self._handle_coin(coin_id)
+                self._draw_in_progress.set()
+                try:
+                    self._handle_coin(coin_id)
+                finally:
+                    self._draw_in_progress.clear()
             else:
                 logger.debug("未知のシリアルメッセージ: %s", line)
+
+    def request_hardware_test(self):
+        """管理画面から、本物のコイン投入と同じ排出処理を1回予約する。"""
+        if self._serial is None or self._stop_event.is_set():
+            return False
+        if self._test_requested.is_set() or self._draw_in_progress.is_set():
+            return False
+        self._test_requested.set()
+        return True
 
     def _handle_coin(self, coin_id=None):
         logger.info("USB経由でコイン投入を検知しました。")

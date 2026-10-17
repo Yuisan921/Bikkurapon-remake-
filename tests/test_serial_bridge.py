@@ -178,3 +178,24 @@ def test_status_changes_when_bridge_stops():
     assert bridge.get_status()["connected"] is True
     bridge.stop()
     assert bridge.get_status()["connected"] is False
+
+
+def test_hardware_test_uses_same_dispense_flow_as_coin():
+    results = []
+    bridge = SerialBridge(
+        "COM3",
+        115200,
+        lambda: _plan("test-reservation", "b"),
+        on_dispense_result=lambda reservation_id, success: results.append(
+            (reservation_id, success)
+        ),
+        ack_timeout=0.1,
+    )
+    fake = FakeSerial([b"DONE:test-reservation\n"], bridge._stop_event)
+    bridge._serial = fake
+
+    assert bridge.request_hardware_test() is True
+    bridge._run()
+
+    assert fake.written == ["DISPENSE:test-reservation:B\n"]
+    assert results == [("test-reservation", True)]

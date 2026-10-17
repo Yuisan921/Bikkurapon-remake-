@@ -83,6 +83,21 @@
       <div id="preview-buttons" class="preview-buttons"></div>
     </section>
 
+    <section class="panel hardware-test-panel">
+      <div class="panel-heading">
+        <div>
+          <p class="section-label">REAL MACHINE TEST</p>
+          <h2>実際に動くテスト</h2>
+        </div>
+        <span class="danger-chip">在庫が1個減ります</span>
+      </div>
+      <p class="panel-description">本番と同じ抽選を行い、Arduino・ホッパー・画面演出をまとめて確認します。</p>
+      <button id="hardware-test-button" class="hardware-test-button" type="button" disabled>
+        <span class="hardware-test-icon" aria-hidden="true">USB</span>
+        <span><b>実機を1回動かす</b><small id="hardware-test-detail">Arduinoの接続を待っています</small></span>
+      </button>
+    </section>
+
     <section class="panel inventory-panel">
       <div class="panel-heading">
         <div>
@@ -91,7 +106,11 @@
         </div>
         <span id="probability-total" class="total-chip">合計 100%</span>
       </div>
-      <p class="panel-description">確率は片方を保存すると、もう片方が自動で調整されます。</p>
+      <p class="panel-description">自動調整をオフにすると確率を手動で変更できます。片方を保存すると、もう片方も自動で調整されます。</p>
+      <label class="auto-probability-control" for="auto-probability-toggle">
+        <span class="switch"><input id="auto-probability-toggle" type="checkbox"><i></i></span>
+        <span><b>在庫に合わせて確率を自動調整</b><small>残っている当たり・はずれカプセルの比率を、そのまま抽選確率にします</small></span>
+      </label>
       <div id="prize-list" class="prize-list"></div>
     </section>
 

@@ -188,6 +188,7 @@ button { color: inherit; }
 .panel h2 { margin: 0; font-size: 1.3rem; }
 .panel-description { margin-top: 6px; }
 .safe-chip, .total-chip { padding: 6px 11px; border-radius: 999px; color: #24744f; font-size: .7rem; font-weight: 900; background: #e2f4e9; }
+.danger-chip { padding: 6px 11px; border-radius: 999px; color: #9f302f; font-size: .7rem; font-weight: 900; background: #ffe5df; }
 .total-chip { color: var(--teal-dark); background: #e1f1ef; }
 .total-chip.is-warning { color: #9b5b18; background: #ffebc8; }
 
@@ -246,6 +247,38 @@ button { color: inherit; }
 .preview-button.standard { border: 1px solid #bcdedb; background: #edf8f6; }
 .preview-button.standard span { background: var(--teal); }
 
+.hardware-test-button {
+  display: flex;
+  align-items: center;
+  gap: 15px;
+  width: min(100%, 560px);
+  margin-top: 20px;
+  padding: 15px 19px;
+  border: 2px solid var(--teal);
+  border-radius: 16px;
+  color: var(--teal-dark);
+  text-align: left;
+  background: #eaf7f5;
+  cursor: pointer;
+}
+.hardware-test-button:disabled { color: #7b8989; border-color: #cbd2cf; background: #f0f1ed; cursor: not-allowed; opacity: .75; }
+.hardware-test-button b, .hardware-test-button small { display: block; }
+.hardware-test-button b { font-size: 1.05rem; }
+.hardware-test-button small { margin-top: 3px; color: var(--muted); font-size: .7rem; }
+.hardware-test-icon { display: grid; place-items: center; flex: 0 0 auto; width: 48px; aspect-ratio: 1; border-radius: 14px; color: #fff; font-size: .7rem; font-weight: 1000; background: var(--teal); }
+.hardware-test-button:disabled .hardware-test-icon { background: #99a5a3; }
+
+.auto-probability-control { display: flex; align-items: center; gap: 14px; margin-top: 18px; padding: 14px 16px; border: 1px solid #b9ddda; border-radius: 14px; background: #edf8f6; cursor: pointer; }
+.auto-probability-control b, .auto-probability-control small { display: block; }
+.auto-probability-control b { font-size: .88rem; }
+.auto-probability-control small { margin-top: 3px; color: var(--muted); font-size: .7rem; }
+.switch { position: relative; flex: 0 0 auto; width: 48px; height: 27px; }
+.switch input { position: absolute; opacity: 0; pointer-events: none; }
+.switch i { position: absolute; inset: 0; border-radius: 99px; background: #aab5b2; transition: .2s ease; }
+.switch i::after { content: ""; position: absolute; top: 4px; left: 4px; width: 19px; aspect-ratio: 1; border-radius: 50%; background: #fff; box-shadow: 0 2px 5px rgba(0,0,0,.2); transition: .2s ease; }
+.switch input:checked + i { background: var(--teal); }
+.switch input:checked + i::after { transform: translateX(21px); }
+
 .prize-list { display: grid; grid-template-columns: repeat(2, 1fr); gap: 14px; margin-top: 20px; }
 .prize-card { padding: 20px; border: 1px solid var(--line); border-radius: 16px; background: #fff; }
 .prize-card.prize-winner { border-top: 5px solid var(--red); }
@@ -268,6 +301,8 @@ button { color: inherit; }
 .percent-input { display: flex; align-items: center; gap: 3px; }
 .percent-input input { width: 54px; padding: 7px 4px; border: 1px solid var(--line); border-radius: 8px; text-align: center; font-weight: 900; }
 .percent-input span { color: var(--muted); font-size: .78rem; }
+.probability-block.is-automatic { opacity: .58; }
+.probability-block button:disabled { cursor: not-allowed; }
 
 .start-guide { display: grid; grid-template-columns: repeat(3, 1fr); gap: 13px; margin: 20px 0 0; padding: 0; list-style: none; }
 .start-guide li { display: flex; align-items: center; gap: 11px; padding: 13px; border-radius: 13px; background: #f4f1e9; }

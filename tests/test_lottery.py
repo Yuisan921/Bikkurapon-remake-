@@ -179,3 +179,40 @@ def test_writes_leave_no_temp_files_and_valid_json(limited_lottery):
 def test_set_probability_rejects_non_finite_or_negative(lottery, bad):
     with pytest.raises(ValueError):
         lottery.set_probability("atari", bad)
+
+
+def test_auto_probability_tracks_remaining_stock(tmp_path):
+    prizes = [
+        {"id": "atari", "name": "当たり", "probability": 0.2, "stock": 2, "hopper": "a"},
+        {"id": "hazure", "name": "はずれ", "probability": 0.8, "stock": 6, "hopper": "b"},
+    ]
+    prizes_path = tmp_path / "prizes.json"
+    prizes_path.write_text(json.dumps(prizes), encoding="utf-8")
+    automatic = Lottery(
+        prizes_path,
+        tmp_path / "stock.json",
+        auto_probability_by_stock=True,
+    )
+
+    by_id = {item["id"]: item for item in automatic.get_status()}
+    assert by_id["atari"]["probability"] == pytest.approx(0.25)
+    assert by_id["hazure"]["probability"] == pytest.approx(0.75)
+
+    automatic.set_stock("atari", 6)
+    by_id = {item["id"]: item for item in automatic.get_status()}
+    assert by_id["atari"]["probability"] == pytest.approx(0.5)
+    assert by_id["hazure"]["probability"] == pytest.approx(0.5)
+
+
+def test_manual_probability_is_available_after_auto_mode_is_disabled(limited_lottery):
+    limited_lottery.set_auto_probability_by_stock(True)
+    with pytest.raises(ValueError, match="在庫連動"):
+        limited_lottery.set_probability("atari", 0.9)
+
+    limited_lottery.set_auto_probability_by_stock(False)
+    assert limited_lottery.set_probability("atari", 0.9) == 0.9
+
+
+def test_auto_probability_rejects_unlimited_stock(lottery):
+    with pytest.raises(ValueError, match="すべての景品"):
+        lottery.set_auto_probability_by_stock(True)

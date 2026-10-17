@@ -42,6 +42,7 @@ class Lottery:
         stock_data_path,
         reservation_timeout=30.0,
         clock=time.monotonic,
+        auto_probability_by_stock=False,
     ):
         self.prizes_config_path = Path(prizes_config_path)
         self.stock_data_path = Path(stock_data_path)
@@ -52,6 +53,10 @@ class Lottery:
         self._reserved_counts = {}
         self._prizes = self._load_prizes()
         self._ensure_stock_file()
+        self._auto_probability_by_stock = bool(auto_probability_by_stock)
+        if self._auto_probability_by_stock:
+            with self._lock:
+                self._sync_probabilities_to_stock_locked(self._read_stock())
 
     def _load_prizes(self):
         with open(self.prizes_config_path, encoding="utf-8") as f:
@@ -73,6 +78,39 @@ class Lottery:
 
     def _write_prizes(self):
         _write_json_atomic(self.prizes_config_path, self._prizes)
+
+    def _sync_probabilities_to_stock_locked(self, stock):
+        """有限在庫の残数比を確率に反映する。全在庫0なら現在値を保つ。"""
+        if any(prize["stock"] is None for prize in self._prizes):
+            raise ValueError("自動確率は、すべての景品に在庫数がある場合だけ使えます")
+
+        remaining = [max(0, int(stock.get(prize["id"], 0))) for prize in self._prizes]
+        total = sum(remaining)
+        if total <= 0:
+            return False
+
+        changed = False
+        for prize, amount in zip(self._prizes, remaining):
+            probability = amount / total
+            if prize["probability"] != probability:
+                prize["probability"] = probability
+                changed = True
+        if changed:
+            self._write_prizes()
+        return changed
+
+    @property
+    def auto_probability_by_stock(self):
+        return self._auto_probability_by_stock
+
+    def set_auto_probability_by_stock(self, enabled):
+        """在庫比率による確率自動調整を切り替える。オン時は即座に再計算する。"""
+        with self._lock:
+            enabled = bool(enabled)
+            if enabled:
+                self._sync_probabilities_to_stock_locked(self._read_stock())
+            self._auto_probability_by_stock = enabled
+            return self._auto_probability_by_stock
 
     def _release_reservation_locked(self, reservation):
         prize_id = reservation["prize"]["id"]
@@ -174,6 +212,8 @@ class Lottery:
                 stock[chosen["id"]] -= 1
                 self._write_stock(stock)
             self._release_reservation_locked(reservation)
+            if self._auto_probability_by_stock:
+                self._sync_probabilities_to_stock_locked(stock)
             remaining = self._remaining_available(chosen, stock)
             return {**chosen, "remaining": remaining}
 
@@ -214,6 +254,8 @@ class Lottery:
                 raise KeyError(f"unknown prize id: {prize_id}")
             stock[prize_id] = max(0, stock[prize_id] + amount)
             self._write_stock(stock)
+            if self._auto_probability_by_stock:
+                self._sync_probabilities_to_stock_locked(stock)
             return stock[prize_id]
 
     def set_stock(self, prize_id, amount):
@@ -229,6 +271,8 @@ class Lottery:
                 max(0, amount),
             )
             self._write_stock(stock)
+            if self._auto_probability_by_stock:
+                self._sync_probabilities_to_stock_locked(stock)
             return stock[prize_id]
 
     def set_probability(self, prize_id, probability):
@@ -237,6 +281,8 @@ class Lottery:
         わざと確率を偏らせる」といった用途で使う想定。
         """
         with self._lock:
+            if self._auto_probability_by_stock:
+                raise ValueError("在庫連動がオンの間は手動で確率を変更できません")
             prize = next((p for p in self._prizes if p["id"] == prize_id), None)
             if prize is None:
                 raise KeyError(f"unknown prize id: {prize_id}")

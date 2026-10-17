@@ -8,43 +8,14 @@
 </head>
 <body>
   <main id="stage" class="state-idle" aria-live="polite">
-    <nav class="game-nav" aria-label="画面操作">
-      <div class="game-nav-brand">
-        <span>祭</span>
-        <strong>びっくらぽん</strong>
-      </div>
-      <div class="game-nav-tabs">
-        <button class="nav-button active" type="button" aria-current="page">ゲーム</button>
-        <button id="nav-admin" class="nav-button" type="button">管理画面</button>
-      </div>
-      <div class="game-nav-actions">
-        <button id="nav-fullscreen" class="nav-button action" type="button">全画面にする</button>
-        <button id="nav-hide-game" class="nav-button action" type="button">画面を隠す</button>
-        <button id="nav-close-app" class="nav-button danger" type="button">ゲーム画面を閉じる</button>
-      </div>
-    </nav>
-
     <div class="forest-ambience" aria-hidden="true">
       <i></i><i></i><i></i><i></i><i></i><i></i>
     </div>
 
-    <div id="connection-state" class="connection-pill is-offline">
-      <span class="connection-dot"></span>
-      <span class="connection-label">準備中</span>
-    </div>
-
     <section id="idle-screen" class="screen idle-screen">
-      <div class="shrine-title">
-        <p>御神木の運だめし</p>
-        <h1><span>妖怪まつり</span>びっくらぽん！</h1>
-      </div>
-      <div class="machine-focus" aria-hidden="true"><span></span></div>
       <div class="instruction-card">
         <span class="coin-icon" aria-hidden="true">￥</span>
-        <div>
-          <strong>コインを通してね！</strong>
-          <small>御神木のガチャが目を覚ますよ</small>
-        </div>
+        <strong>コインを入れてね</strong>
       </div>
     </section>
 

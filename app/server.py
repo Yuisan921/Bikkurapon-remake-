@@ -25,7 +25,7 @@ from flask_socketio import SocketIO
 
 from app.browser_launcher import open_default_windows, open_windows
 from app.config_setup import ensure_config_dir, migrate_legacy_data
-from app.lottery import Lottery, OutOfStock
+from app.lottery import Lottery, OutOfStock, _write_json_atomic
 from app.paths import BASE_DIR, BUNDLE_DIR, LEGACY_BASE_DIR
 from app.serial_bridge import SerialBridge, find_serial_port
 
@@ -77,7 +77,15 @@ with open(CONFIG_DIR / "settings.json", encoding="utf-8") as f:
 lottery = Lottery(
     prizes_config_path=CONFIG_DIR / "prizes.json",
     stock_data_path=DATA_DIR / "stock.json",
+    auto_probability_by_stock=settings.get("auto_probability_by_stock", False),
 )
+settings_lock = threading.Lock()
+
+
+def save_settings():
+    """管理画面から変更した設定を、次回起動にも残す。"""
+    with settings_lock:
+        _write_json_atomic(CONFIG_DIR / "settings.json", settings)
 
 
 def _broadcast_result(result):
@@ -232,9 +240,11 @@ _ADMIN_PATHS = {
     "/api/system_status",
     "/api/preview_result",
     "/api/demo_draw",
+    "/api/hardware_test",
     "/api/restock",
     "/api/set_stock",
     "/api/set_probability",
+    "/api/set_auto_probability",
 }
 _DEVICE_PATHS = {"/api/insert_coin", "/api/dispense_ack"}
 
@@ -311,7 +321,11 @@ def api_system_status():
             "connected": False,
             "port": None if port_setting == "auto" else port_setting,
         }
-    return jsonify({"hardware": hardware, "ready": lottery.has_stock()})
+    return jsonify({
+        "hardware": hardware,
+        "ready": lottery.has_stock(),
+        "auto_probability_by_stock": lottery.auto_probability_by_stock,
+    })
 
 
 @app.route("/api/preview_result", methods=["POST"])
@@ -336,6 +350,16 @@ def api_demo_draw():
     socketio.emit("draw_started", {"preview": True})
     socketio.emit("draw_result", result)
     return jsonify(result)
+
+
+@app.route("/api/hardware_test", methods=["POST"])
+def api_hardware_test():
+    """Arduino・ホッパー・在庫を含む、本番と同じ抽選を1回開始する。"""
+    if serial_bridge is None or not serial_bridge.get_status().get("connected"):
+        return jsonify({"error": "Arduinoが接続されていません"}), 409
+    if not serial_bridge.request_hardware_test():
+        return jsonify({"error": "実機テストを開始できません。少し待って再度お試しください"}), 409
+    return jsonify({"ok": True}), 202
 
 
 @app.route("/api/insert_coin", methods=["POST"])
@@ -407,6 +431,24 @@ def api_set_probability():
         return jsonify({"error": str(exc)}), 400
     socketio.emit("stock_updated", lottery.get_status())
     return jsonify({"prize_id": prize_id, "probability": probability})
+
+
+@app.route("/api/set_auto_probability", methods=["POST"])
+def api_set_auto_probability():
+    """在庫残数の比率をそのまま抽選確率にする機能を切り替える。"""
+    payload = _json_payload()
+    enabled = payload.get("enabled")
+    if not isinstance(enabled, bool):
+        abort(make_response(jsonify({"error": "invalid or missing field: enabled"}), 400))
+    try:
+        lottery.set_auto_probability_by_stock(enabled)
+    except ValueError as exc:
+        return jsonify({"error": str(exc)}), 400
+    settings["auto_probability_by_stock"] = enabled
+    save_settings()
+    prizes = lottery.get_status()
+    socketio.emit("stock_updated", prizes)
+    return jsonify({"enabled": enabled, "prizes": prizes})
 
 
 def main():

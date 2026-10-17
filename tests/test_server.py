@@ -32,6 +32,7 @@ def server(server_module, tmp_path, monkeypatch):
     monkeypatch.setitem(server_module.settings, "allow_remote_admin", False)
     monkeypatch.setitem(server_module.settings, "allow_remote_insert_coin", False)
     monkeypatch.setitem(server_module.settings, "device_token", "test-device-token-1234")
+    monkeypatch.setitem(server_module.settings, "auto_probability_by_stock", False)
     return server_module
 
 
@@ -149,6 +150,41 @@ def test_system_status_reports_hardware_connection(server, monkeypatch):
     assert response.status_code == 200
     assert response.get_json()["hardware"]["port"] == "COM4"
     assert response.get_json()["hardware"]["connected"] is True
+    assert response.get_json()["auto_probability_by_stock"] is False
+
+
+def test_hardware_test_requires_connection(server, monkeypatch):
+    monkeypatch.setattr(server, "serial_bridge", None)
+
+    response = server.app.test_client().post("/api/hardware_test")
+
+    assert response.status_code == 409
+    assert "Arduino" in response.get_json()["error"]
+
+
+def test_hardware_test_requests_real_dispense(server, monkeypatch):
+    bridge = mock.Mock()
+    bridge.get_status.return_value = {"connected": True}
+    bridge.request_hardware_test.return_value = True
+    monkeypatch.setattr(server, "serial_bridge", bridge)
+
+    response = server.app.test_client().post("/api/hardware_test")
+
+    assert response.status_code == 202
+    bridge.request_hardware_test.assert_called_once_with()
+
+
+def test_auto_probability_toggle_updates_probabilities(server, monkeypatch):
+    monkeypatch.setattr(server, "save_settings", mock.Mock())
+
+    response = server.app.test_client().post(
+        "/api/set_auto_probability", json={"enabled": True}
+    )
+
+    assert response.status_code == 200
+    assert response.get_json()["enabled"] is True
+    assert [item["probability"] for item in response.get_json()["prizes"]] == [0.5, 0.5]
+    assert server.settings["auto_probability_by_stock"] is True
 
 
 REMOTE = {"REMOTE_ADDR": "192.168.0.50"}
@@ -160,6 +196,7 @@ REMOTE = {"REMOTE_ADDR": "192.168.0.50"}
         ("/api/set_stock", {"prize_id": "atari", "amount": 99}),
         ("/api/restock", {"prize_id": "atari", "amount": 1}),
         ("/api/set_probability", {"prize_id": "atari", "probability": 1.0}),
+        ("/api/set_auto_probability", {"enabled": True}),
     ],
 )
 def test_remote_cannot_change_stock_or_probability_by_default(server, path, body):
@@ -178,7 +215,7 @@ def test_remote_cannot_open_admin_page_or_insert_coin_by_default(server):
 
 
 @pytest.mark.parametrize(
-    "path", ["/api/system_status", "/api/preview_result", "/api/demo_draw"]
+    "path", ["/api/system_status", "/api/preview_result", "/api/demo_draw", "/api/hardware_test"]
 )
 def test_remote_cannot_use_new_admin_endpoints_by_default(server, path):
     client = server.app.test_client()
