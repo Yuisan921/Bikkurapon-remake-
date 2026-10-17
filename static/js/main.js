@@ -3,6 +3,7 @@ const socket = io();
 const screens = {
   idle: document.getElementById("idle-screen"),
   playing: document.getElementById("playing-screen"),
+  video: document.getElementById("video-screen"),
   result: document.getElementById("result-screen"),
   error: document.getElementById("error-screen"),
   soldout: document.getElementById("soldout-screen"),
@@ -16,6 +17,7 @@ const playingCaption = document.getElementById("playing-caption");
 const resultTitle = document.getElementById("result-title");
 const resultMessage = document.getElementById("result-message");
 const resultSymbol = document.getElementById("result-symbol");
+const resultVideo = document.getElementById("result-video");
 const confetti = document.getElementById("confetti");
 const navAdmin = document.getElementById("nav-admin");
 const navFullscreen = document.getElementById("nav-fullscreen");
@@ -27,10 +29,10 @@ const RESULT_DISPLAY_MS = 5200;
 const ERROR_DISPLAY_MS = 5000;
 const rouletteSymbols = ["火", "水", "風", "雷", "福", "縁", "祭"];
 const captions = [
-  "どのカプセルにしようかな？",
-  "運気を集めています…",
-  "妖怪たちの会議は大さわぎ！",
-  "もうすぐ決まるよ！",
+  "木霊たちが運を選んでいます…",
+  "御神木の力を集めています…",
+  "古いガチャが動きはじめた！",
+  "もうすぐカプセルが決まるよ！",
 ];
 
 let hasStock = true;
@@ -103,6 +105,15 @@ function clearAnimationTimers() {
   resetTimer = null;
 }
 
+function resetResultVideo() {
+  resultVideo.onerror = null;
+  resultVideo.onended = null;
+  resultVideo.pause();
+  resultVideo.removeAttribute("src");
+  resultVideo.load();
+  screens.video.classList.remove("is-preview");
+}
+
 function setConnection(connected) {
   connectionState.classList.toggle("is-online", connected);
   connectionState.classList.toggle("is-offline", !connected);
@@ -111,6 +122,7 @@ function setConnection(connected) {
 
 function showIdle() {
   clearAnimationTimers();
+  resetResultVideo();
   busy = false;
   queuedResult = null;
   confetti.replaceChildren();
@@ -165,12 +177,8 @@ function makeConfetti() {
   }
 }
 
-function revealResult(result) {
-  window.clearInterval(rouletteTimer);
-  window.clearInterval(captionTimer);
-  rouletteTimer = null;
-  captionTimer = null;
-
+function showFallbackResult(result) {
+  resetResultVideo();
   const isWinner = result.id === "atari" || String(result.hopper).toLowerCase() === "a";
   stage.className = `state-result ${isWinner ? "state-atari" : "state-hazure"}`;
   resultSymbol.textContent = isWinner ? "福" : "縁";
@@ -183,6 +191,36 @@ function revealResult(result) {
   showScreen("result");
   makeConfetti();
   resetTimer = window.setTimeout(showIdle, RESULT_DISPLAY_MS);
+}
+
+function revealResult(result) {
+  window.clearInterval(rouletteTimer);
+  window.clearInterval(captionTimer);
+  rouletteTimer = null;
+  captionTimer = null;
+
+  if (!result.video) {
+    showFallbackResult(result);
+    return;
+  }
+
+  stage.className = "state-video";
+  screens.video.classList.toggle("is-preview", Boolean(result.preview));
+  showScreen("video");
+  let fellBack = false;
+  const fallback = () => {
+    if (fellBack) return;
+    fellBack = true;
+    showFallbackResult(result);
+  };
+  resultVideo.onerror = fallback;
+  resultVideo.onended = () => {
+    resetTimer = window.setTimeout(showIdle, 500);
+  };
+  resultVideo.src = result.video;
+  resultVideo.load();
+  const playback = resultVideo.play();
+  if (playback) playback.catch(fallback);
 }
 
 function queueResult(result) {

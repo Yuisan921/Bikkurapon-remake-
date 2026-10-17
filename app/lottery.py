@@ -194,6 +194,19 @@ class Lottery:
         reservation = self.reserve_draw()
         return self.commit_draw(reservation["reservation_id"])
 
+    def preview_draw(self):
+        """現在の確率で1回だけ試し抽選する。在庫・予約は一切変更しない。"""
+        with self._lock:
+            if not self._prizes:
+                raise OutOfStock("抽選結果が設定されていません")
+            weights = [p["probability"] for p in self._prizes]
+            if sum(weights) <= 0:
+                weights = [1] * len(self._prizes)
+            chosen = random.choices(self._prizes, weights=weights, k=1)[0]
+            stock = self._read_stock()
+            remaining = self._remaining_available(chosen, stock)
+            return {**chosen, "remaining": remaining, "preview": True}
+
     def restock(self, prize_id, amount):
         with self._lock:
             stock = self._read_stock()

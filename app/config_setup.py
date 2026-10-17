@@ -63,6 +63,29 @@ def _prizes_need_migration(prizes_path):
     return any("hopper" not in prize for prize in prizes)
 
 
+def _add_missing_prize_fields(prizes_path, bundle_prizes_path):
+    """確率や在庫は保ったまま、動画パスなど新しい項目だけを補う。"""
+    try:
+        with open(prizes_path, encoding="utf-8") as f:
+            prizes = json.load(f)
+        with open(bundle_prizes_path, encoding="utf-8") as f:
+            defaults = json.load(f)
+    except (OSError, json.JSONDecodeError):
+        return
+
+    defaults_by_id = {prize.get("id"): prize for prize in defaults}
+    changed = False
+    for prize in prizes:
+        default = defaults_by_id.get(prize.get("id"), {})
+        for key, value in default.items():
+            if key not in prize:
+                prize[key] = value
+                changed = True
+    if changed:
+        with open(prizes_path, "w", encoding="utf-8") as f:
+            json.dump(prizes, f, ensure_ascii=False, indent=2)
+
+
 def ensure_config_dir(config_dir, bundle_config_dir):
     """config_dir が無ければ同梱の既定値をコピーして作る。
 
@@ -95,3 +118,5 @@ def ensure_config_dir(config_dir, bundle_config_dir):
         )
         shutil.copy(prizes_path, backup_path)
         shutil.copy(bundle_config_dir / "prizes.json", prizes_path)
+    else:
+        _add_missing_prize_fields(prizes_path, bundle_config_dir / "prizes.json")

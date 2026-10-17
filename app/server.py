@@ -20,7 +20,7 @@ import urllib.error
 import urllib.request
 from logging.handlers import RotatingFileHandler
 
-from flask import Flask, abort, jsonify, make_response, render_template, request
+from flask import Flask, abort, jsonify, make_response, render_template, request, send_from_directory
 from flask_socketio import SocketIO
 
 from app.browser_launcher import open_default_windows, open_windows
@@ -34,7 +34,9 @@ logger = logging.getLogger(__name__)
 
 CONFIG_DIR = BASE_DIR / "config"
 DATA_DIR = BASE_DIR / "data"
+VIDEO_DIR = BASE_DIR / "videos"
 DATA_DIR.mkdir(parents=True, exist_ok=True)
+VIDEO_DIR.mkdir(parents=True, exist_ok=True)
 
 # GUI版ではコンソールを表示しないため、起動失敗も確認できるログを保存する。
 # 1ファイル1MB・3世代に制限し、文化祭のPCで容量が増え続けないようにする。
@@ -229,6 +231,7 @@ _ADMIN_PATHS = {
     "/admin",
     "/api/system_status",
     "/api/preview_result",
+    "/api/demo_draw",
     "/api/restock",
     "/api/set_stock",
     "/api/set_probability",
@@ -285,6 +288,12 @@ def admin():
     return render_template("admin.html")
 
 
+@app.route("/media/<path:filename>")
+def media_file(filename):
+    """利用者が後から差し替える当たり・ハズレ動画を返す。"""
+    return send_from_directory(VIDEO_DIR, filename)
+
+
 @app.route("/api/status")
 def api_status():
     return jsonify({"prizes": lottery.get_status()})
@@ -315,6 +324,18 @@ def api_preview_result():
     socketio.emit("draw_started", {"preview": True})
     socketio.emit("draw_result", {**prize, "preview": True})
     return jsonify({"ok": True})
+
+
+@app.route("/api/demo_draw", methods=["POST"])
+def api_demo_draw():
+    """設定中の確率で1回試す。在庫・Arduino・ホッパーには触れない。"""
+    try:
+        result = lottery.preview_draw()
+    except OutOfStock:
+        return jsonify({"error": "no_prizes"}), 409
+    socketio.emit("draw_started", {"preview": True})
+    socketio.emit("draw_result", result)
+    return jsonify(result)
 
 
 @app.route("/api/insert_coin", methods=["POST"])

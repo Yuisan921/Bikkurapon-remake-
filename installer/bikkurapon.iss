@@ -5,26 +5,26 @@
 ; (GitHub Actionsで自動ビルドする場合は .github/workflows/build-windows.yml
 ;  が両方まとめて実行します)
 ;
-; インストール先はユーザー名を含まない共通のプログラムフォルダ
-; ({autopf}\Bikkurapon)なので、Windowsのユーザー名に日本語(非ASCII文字)が
-; 含まれていて発生する不具合を避けられる。
+; 学校PCでも管理者パスワードなしで導入できるよう、現在のユーザー専用の
+; LocalAppData\Programs にインストールする。
 
 #define MyAppName "妖怪まつり びっくらぽん"
-#define MyAppVersion "2.0.3"
+#define MyAppVersion "2.1.0"
 #define MyAppExeName "bikkurapon.exe"
 
 [Setup]
 AppId={{6C2B7E3A-4B7B-4B77-9C1E-3E6E6B0A0B01}
 AppName={#MyAppName}
 AppVersion={#MyAppVersion}
-DefaultDirName={autopf}\Bikkurapon
+DefaultDirName={localappdata}\Programs\Bikkurapon
 DefaultGroupName={#MyAppName}
 DisableProgramGroupPage=yes
+PrivilegesRequired=lowest
+UsePreviousAppDir=no
 OutputDir=..\dist_installer
 OutputBaseFilename=BikkurapoSetup
 Compression=lzma
 SolidCompression=yes
-ArchitecturesInstallIn64BitMode=x64
 WizardStyle=modern
 
 [Languages]
@@ -35,6 +35,7 @@ Name: "desktopicon"; Description: "デスクトップにアイコンを作成す
 
 [Files]
 Source: "..\dist\{#MyAppExeName}"; DestDir: "{app}"; Flags: ignoreversion
+Source: "..\videos\README.md"; DestDir: "{app}\videos"; Flags: onlyifdoesntexist
 
 [Icons]
 Name: "{group}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"

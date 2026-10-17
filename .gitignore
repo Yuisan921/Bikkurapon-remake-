@@ -5,6 +5,7 @@ venv/
 venv_build/
 data/stock.json
 data/*.log*
+videos/*.mp4
 bikkurapon-startup.log
 .DS_Store
 

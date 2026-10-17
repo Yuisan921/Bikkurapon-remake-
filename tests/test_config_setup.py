@@ -13,8 +13,8 @@ def _make_bundle_config(tmp_path):
     _write_json(
         bundle_config / "prizes.json",
         [
-            {"id": "atari", "name": "当たり", "probability": 0.2, "stock": 30, "hopper": "a"},
-            {"id": "hazure", "name": "はずれ", "probability": 0.8, "stock": 60, "hopper": "b"},
+            {"id": "atari", "name": "当たり", "probability": 0.2, "stock": 30, "hopper": "a", "video": "/media/atari.mp4"},
+            {"id": "hazure", "name": "はずれ", "probability": 0.8, "stock": 60, "hopper": "b", "video": "/media/hazure.mp4"},
         ],
     )
     _write_json(bundle_config / "settings.json", {"port": 5000})
@@ -74,6 +74,7 @@ def test_leaves_current_format_prizes_untouched(tmp_path):
 
     prizes = json.loads(prizes_path.read_text(encoding="utf-8"))
     assert prizes[0]["stock"] == 3
+    assert prizes[0]["video"] == "/media/atari.mp4"
     assert not (config_dir / "prizes.json.bak").exists()
 
 

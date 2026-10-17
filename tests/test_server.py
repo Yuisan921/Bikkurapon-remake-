@@ -117,6 +117,21 @@ def test_preview_result_does_not_change_stock(server):
     names = _event_names(socket_client)
     assert "draw_started" in names
     assert "draw_result" in names
+
+
+def test_demo_draw_uses_probability_without_stock_or_hardware(server):
+    socket_client = server.socketio.test_client(server.app)
+    socket_client.get_received()
+    before = server.lottery.stock_data_path.read_text(encoding="utf-8")
+
+    response = server.app.test_client().post("/api/demo_draw")
+
+    assert response.status_code == 200
+    assert response.get_json()["preview"] is True
+    assert server.lottery.stock_data_path.read_text(encoding="utf-8") == before
+    names = _event_names(socket_client)
+    assert "draw_started" in names
+    assert "draw_result" in names
     assert "stock_updated" not in names
 
 
@@ -162,7 +177,9 @@ def test_remote_cannot_open_admin_page_or_insert_coin_by_default(server):
     assert server.lottery.get_status()[0]["remaining"] == 1  # 抽選も走っていない
 
 
-@pytest.mark.parametrize("path", ["/api/system_status", "/api/preview_result"])
+@pytest.mark.parametrize(
+    "path", ["/api/system_status", "/api/preview_result", "/api/demo_draw"]
+)
 def test_remote_cannot_use_new_admin_endpoints_by_default(server, path):
     client = server.app.test_client()
     response = (

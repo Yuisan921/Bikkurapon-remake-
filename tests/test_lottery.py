@@ -23,6 +23,16 @@ def test_draw_decrements_stock(lottery):
     assert result["remaining"] == 1
 
 
+def test_preview_draw_uses_probability_without_decrementing_stock(lottery):
+    before = lottery.stock_data_path.read_text(encoding="utf-8")
+
+    result = lottery.preview_draw()
+
+    assert result["id"] == "atari"
+    assert result["preview"] is True
+    assert lottery.stock_data_path.read_text(encoding="utf-8") == before
+
+
 def test_falls_back_to_unlimited_prize_when_stock_exhausted(lottery):
     lottery.draw()
     lottery.draw()

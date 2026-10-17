@@ -17,9 +17,22 @@ const headerStatus = document.getElementById("header-status");
 const toast = document.getElementById("toast");
 const showGameButton = document.getElementById("show-game-button");
 const fullscreenButton = document.getElementById("fullscreen-button");
+const demoDrawButton = document.getElementById("demo-draw-button");
 
 let prizes = [];
 let toastTimer = null;
+
+demoDrawButton.addEventListener("click", async () => {
+  demoDrawButton.disabled = true;
+  try {
+    const result = await requestJson("/api/demo_draw", { method: "POST" });
+    notify(`${result.name}：ゲーム画面でテスト中です`);
+  } catch (error) {
+    notify(error.message, true);
+  } finally {
+    window.setTimeout(() => { demoDrawButton.disabled = false; }, 1200);
+  }
+});
 
 async function requestJson(url, options = {}) {
   const response = await fetch(url, options);

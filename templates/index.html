@@ -24,14 +24,8 @@
       </div>
     </nav>
 
-    <div class="festival-sky" aria-hidden="true">
-      <div class="moon">祭</div>
-      <div class="cloud cloud-one"></div>
-      <div class="cloud cloud-two"></div>
-      <div class="lantern-row lantern-row-left"><i></i><i></i><i></i></div>
-      <div class="lantern-row lantern-row-right"><i></i><i></i><i></i></div>
-      <div class="hill hill-back"></div>
-      <div class="hill hill-front"></div>
+    <div class="forest-ambience" aria-hidden="true">
+      <i></i><i></i><i></i><i></i><i></i><i></i>
     </div>
 
     <div id="connection-state" class="connection-pill is-offline">
@@ -40,46 +34,37 @@
     </div>
 
     <section id="idle-screen" class="screen idle-screen">
-      <p class="eyebrow"><span></span>今宵ひらく<span></span></p>
-      <h1 class="festival-title">
-        <span class="title-small">妖怪まつり</span>
-        <span class="title-main">びっくら<span>ぽん！</span></span>
-      </h1>
-
-      <div class="yokai-mascot" aria-hidden="true">
-        <i class="mascot-ear ear-left"></i>
-        <i class="mascot-ear ear-right"></i>
-        <div class="mascot-body">
-          <span class="eye eye-left"></span>
-          <span class="eye eye-right"></span>
-          <span class="mascot-mouth"></span>
-          <span class="mascot-mark">祭</span>
-        </div>
-        <i class="mascot-tail"></i>
+      <div class="shrine-title">
+        <p>御神木の運だめし</p>
+        <h1><span>妖怪まつり</span>びっくらぽん！</h1>
       </div>
-
+      <div class="machine-focus" aria-hidden="true"><span></span></div>
       <div class="instruction-card">
         <span class="coin-icon" aria-hidden="true">￥</span>
         <div>
           <strong>コインを通してね！</strong>
-          <small>妖怪たちが運だめしをはじめるよ</small>
+          <small>御神木のガチャが目を覚ますよ</small>
         </div>
       </div>
     </section>
 
     <section id="playing-screen" class="screen playing-screen hidden">
-      <p class="eyebrow light"><span></span>運命の妖術<span></span></p>
-      <div class="spirit-wheel" aria-hidden="true">
-        <div class="wheel-ring ring-outer"></div>
-        <div class="wheel-ring ring-inner"></div>
-        <div class="wheel-charms">
-          <b>火</b><b>水</b><b>風</b><b>雷</b><b>福</b><b>縁</b>
+      <div class="ritual-panel">
+        <p class="eyebrow"><span></span>御神木の抽選中<span></span></p>
+        <div class="spirit-wheel" aria-hidden="true">
+          <div class="wheel-ring ring-outer"></div>
+          <div class="wheel-ring ring-inner"></div>
+          <div id="roulette-symbol" class="roulette-symbol">?</div>
         </div>
-        <div id="roulette-symbol" class="roulette-symbol">?</div>
+        <h2>ガチャがまわっているよ！</h2>
+        <p id="playing-caption" class="playing-caption">木霊たちが運を選んでいます…</p>
+        <div class="loading-dots" aria-hidden="true"><i></i><i></i><i></i></div>
       </div>
-      <h2>妖怪たちが相談中…</h2>
-      <p id="playing-caption" class="playing-caption">どのカプセルにしようかな？</p>
-      <div class="loading-dots" aria-hidden="true"><i></i><i></i><i></i></div>
+    </section>
+
+    <section id="video-screen" class="screen video-screen hidden">
+      <video id="result-video" playsinline preload="auto"></video>
+      <div class="video-test-badge">演出テスト</div>
     </section>
 
     <section id="result-screen" class="screen result-screen hidden">
