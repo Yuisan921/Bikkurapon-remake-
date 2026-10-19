@@ -11,6 +11,11 @@ on:
         required: false
         default: false
         type: boolean
+      firmware_only:
+        description: "Uno用プログラムだけをZIPにして公開する（PCアプリは変更しない）"
+        required: false
+        default: false
+        type: boolean
   push:
     branches: [main]
     paths:
@@ -27,6 +32,7 @@ on:
 
 jobs:
   build:
+    if: ${{ !inputs.firmware_only }}
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
@@ -125,3 +131,25 @@ jobs:
               --title "妖怪まつり びっくらぽん v2.3.0" `
               --notes "管理画面に、排出エラーの詳しい原因・対象ホッパー・発生時刻を表示する機能を追加しました。管理者権限、Python、BATファイルは不要です。"
           }
+
+  firmware:
+    if: ${{ github.event_name == 'workflow_dispatch' && inputs.firmware_only }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Test actual Uno sketch with simulated serial and servos
+        run: |
+          g++ -std=c++17 -I tests/firmware tests/firmware/uno_protocol.cpp -o /tmp/uno-protocol-test
+          /tmp/uno-protocol-test
+      - name: Package Uno sketch and upload instructions
+        working-directory: firmware
+        run: zip -r ../ArduinoUno-test-fix.zip arduino_uno_usb_serial
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ArduinoUno-test-fix
+          path: ArduinoUno-test-fix.zip
+      - name: Publish firmware alongside compatible PC app
+        if: ${{ inputs.publish_release }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release upload v2.3.0 ArduinoUno-test-fix.zip
