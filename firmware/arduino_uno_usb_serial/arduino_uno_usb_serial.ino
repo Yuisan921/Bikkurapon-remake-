@@ -40,6 +40,16 @@ void setup() {
 }
 
 void loop() {
+  // 管理画面の実機テストはコイン投入なしで届く。
+  // 古いコインへの応答を誤って実行しないよう、予約番号だけの形式を受け付ける。
+  if (Serial.available()) {
+    String command = Serial.readStringUntil('\n');
+    command.trim();
+    if (isTestCommand(command)) {
+      dispenseIfWon(command);
+    }
+  }
+
   bool coinDetected = digitalRead(COIN_SENSOR_PIN) == COIN_DETECTED_LEVEL;
   unsigned long now = millis();
 
@@ -106,6 +116,12 @@ String waitForResponse(
 
       line.trim();
 
+      // コインの応答待ち中に管理画面からテスト命令が届いた場合も処理する。
+      if (isTestCommand(line)) {
+        dispenseIfWon(line);
+        continue;
+      }
+
       if (
         line == noneResponse ||
         line.startsWith(dispensePrefix)
@@ -118,11 +134,19 @@ String waitForResponse(
   return "";
 }
 
+bool isTestCommand(const String &command) {
+  // テスト: DISPENSE:<reservationId>:<hopper>
+  // コイン: DISPENSE:<coinId>:<reservationId>:<hopper>
+  if (!command.startsWith("DISPENSE:")) return false;
+  int separator = command.indexOf(':', 9);
+  return separator > 9 && command.indexOf(':', separator + 1) < 0;
+}
+
 void dispenseIfWon(
   const String &response
 ) {
 
-  if (response.startsWith("NONE:")) {
+  if (response == "NONE" || response.startsWith("NONE:")) {
     Serial.println(
       "排出なし"
     );
@@ -147,7 +171,7 @@ void dispenseIfWon(
   if (
     firstColon < 0 ||
     secondColon < 0 ||
-    thirdColon < 0
+    !response.startsWith("DISPENSE:")
   ) {
     Serial.println(
       "[WARN] 想定外の応答"
@@ -155,16 +179,12 @@ void dispenseIfWon(
     return;
   }
 
-  String reservationId =
-    response.substring(
-      secondColon + 1,
-      thirdColon
-    );
-
-  String hopper =
-    response.substring(
-      thirdColon + 1
-    );
+  // コイン番号の有無に応じて予約番号を取り出す。
+  int reservationStart = thirdColon < 0 ? firstColon + 1 : secondColon + 1;
+  int reservationEnd = thirdColon < 0 ? secondColon : thirdColon;
+  String reservationId = response.substring(reservationStart, reservationEnd);
+  String hopper = response.substring(reservationEnd + 1);
+  if (reservationId.length() == 0) return;
 
   bool success = false;
 
