@@ -69,7 +69,13 @@ Python、CMD、BATファイルの操作は不要です。
 const int COIN_DETECTED_LEVEL = HIGH;
 ```
 
-サーボの動く向きや角度が合わない場合は、次の値を実機に合わせて変更します。
+現在のUnoプログラムは、360度連続回転サーボの動作確認用に、停止信号1500µs →
+0.3秒回転 → 停止信号という設定です。停止位置と回転時間は
+[Uno用の説明](firmware/arduino_uno_usb_serial/README.md)に沿って調整してください。
+時間指定なので1回転・カプセル1個の排出は保証されません。
+
+通常の180度サーボを使う側は `SERVO_A_CONTINUOUS` / `SERVO_B_CONTINUOUS` を
+`false` にしてから、次の角度を実機に合わせて変更します。
 
 ```cpp
 const int SERVO_A_REST_ANGLE = 0;

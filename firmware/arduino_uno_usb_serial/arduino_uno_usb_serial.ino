@@ -9,6 +9,24 @@ const int COIN_DETECTED_LEVEL = LOW;
 const int SERVO_A_PIN = 9;   // 当たり
 const int SERVO_B_PIN = 10;  // はずれ
 
+// 今回の連続回転サーボ用。通常の角度指定サーボを使う側だけ false に変更。
+#ifndef SERVO_A_CONTINUOUS
+#define SERVO_A_CONTINUOUS true
+#endif
+#ifndef SERVO_B_CONTINUOUS
+#define SERVO_B_CONTINUOUS true
+#endif
+
+// 連続回転型では角度ではなく、停止・速度と回転時間を指定する。
+// 停止中にゆっくり動く個体はSTOP_USを5〜10ずつ調整する。
+const int SERVO_A_STOP_US = 1500;
+const int SERVO_B_STOP_US = 1500;
+const int SERVO_A_RUN_US = 1600;
+const int SERVO_B_RUN_US = 1600;
+const unsigned long SERVO_A_RUN_MS = 300;
+const unsigned long SERVO_B_RUN_MS = 300;
+
+// 以下の角度は CONTINUOUS が false のサーボだけに使う。
 const int SERVO_A_REST_ANGLE = 0;
 const int SERVO_A_DISPENSE_ANGLE = 90;
 const int SERVO_B_REST_ANGLE = 0;
@@ -32,11 +50,11 @@ void setup() {
 
   pinMode(COIN_SENSOR_PIN, INPUT_PULLUP);
 
+  // 最初の信号から停止値になるよう、attachより先に値を設定する。
+  stopServo(servoA, SERVO_A_CONTINUOUS, SERVO_A_REST_ANGLE, SERVO_A_STOP_US);
   servoA.attach(SERVO_A_PIN);
-  servoA.write(SERVO_A_REST_ANGLE);
-
+  stopServo(servoB, SERVO_B_CONTINUOUS, SERVO_B_REST_ANGLE, SERVO_B_STOP_US);
   servoB.attach(SERVO_B_PIN);
-  servoB.write(SERVO_B_REST_ANGLE);
 }
 
 void loop() {
@@ -196,8 +214,12 @@ void dispenseIfWon(
 
     dispenseFrom(
       servoA,
+      SERVO_A_CONTINUOUS,
       SERVO_A_REST_ANGLE,
-      SERVO_A_DISPENSE_ANGLE
+      SERVO_A_DISPENSE_ANGLE,
+      SERVO_A_STOP_US,
+      SERVO_A_RUN_US,
+      SERVO_A_RUN_MS
     );
 
     success = true;
@@ -211,8 +233,12 @@ void dispenseIfWon(
 
     dispenseFrom(
       servoB,
+      SERVO_B_CONTINUOUS,
       SERVO_B_REST_ANGLE,
-      SERVO_B_DISPENSE_ANGLE
+      SERVO_B_DISPENSE_ANGLE,
+      SERVO_B_STOP_US,
+      SERVO_B_RUN_US,
+      SERVO_B_RUN_MS
     );
 
     success = true;
@@ -232,14 +258,24 @@ void dispenseIfWon(
   Serial.println(ack);
 }
 
-void dispenseFrom(
-  Servo &servo,
-  int restAngle,
-  int dispenseAngle
-) {
-  servo.write(dispenseAngle);
+void stopServo(Servo &servo, bool continuous, int restAngle, int stopUs) {
+  if (continuous) {
+    servo.writeMicroseconds(stopUs);
+  } else {
+    servo.write(restAngle);
+  }
+}
 
-  delay(SERVO_HOLD_MS);
-
-  servo.write(restAngle);
+void dispenseFrom(Servo &servo, bool continuous, int restAngle, int dispenseAngle,
+                  int stopUs, int runUs, unsigned long runMs) {
+  if (continuous) {
+    servo.writeMicroseconds(runUs);
+    delay(runMs);
+  } else {
+    servo.write(dispenseAngle);
+    delay(SERVO_HOLD_MS);
+  }
+  stopServo(servo, continuous, restAngle, stopUs);
+  // 停止信号の送出周期を待ってから完了通知する。実排出の検知ではない。
+  delay(40);
 }

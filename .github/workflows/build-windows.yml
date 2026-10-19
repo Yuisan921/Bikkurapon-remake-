@@ -139,17 +139,22 @@ jobs:
       - uses: actions/checkout@v4
       - name: Test actual Uno sketch with simulated serial and servos
         run: |
-          g++ -std=c++17 -I tests/firmware tests/firmware/uno_protocol.cpp -o /tmp/uno-protocol-test
-          /tmp/uno-protocol-test
+          set -e
+          for servo_a in true false; do
+            for servo_b in true false; do
+              g++ -std=c++17 -DSERVO_A_CONTINUOUS=$servo_a -DSERVO_B_CONTINUOUS=$servo_b -I tests/firmware tests/firmware/uno_protocol.cpp -o /tmp/uno-protocol-test
+              /tmp/uno-protocol-test
+            done
+          done
       - name: Package Uno sketch and upload instructions
         working-directory: firmware
-        run: zip -r ../ArduinoUno-test-fix.zip arduino_uno_usb_serial
+        run: zip -r ../ArduinoUno-continuous-servo.zip arduino_uno_usb_serial
       - uses: actions/upload-artifact@v4
         with:
-          name: ArduinoUno-test-fix
-          path: ArduinoUno-test-fix.zip
+          name: ArduinoUno-continuous-servo
+          path: ArduinoUno-continuous-servo.zip
       - name: Publish firmware alongside compatible PC app
         if: ${{ inputs.publish_release }}
         env:
           GH_TOKEN: ${{ github.token }}
-        run: gh release upload v2.3.0 ArduinoUno-test-fix.zip
+        run: gh release upload v2.3.0 ArduinoUno-continuous-servo.zip

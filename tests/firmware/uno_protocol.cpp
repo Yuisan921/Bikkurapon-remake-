@@ -3,18 +3,28 @@
 
 int main() {
   setup();
+  const int stopA = SERVO_A_CONTINUOUS ? 1500 : 0;
+  const int stopB = SERVO_B_CONTINUOUS ? 1500 : 0;
+  const int runA = SERVO_A_CONTINUOUS ? 1600 : 90;
+  const int runB = SERVO_B_CONTINUOUS ? 1600 : 90;
+  // Startup must send neutral, never a continuous rotation command.
+  assert((servoA.angles == std::vector<int>{stopA}));
+  assert((servoB.angles == std::vector<int>{stopB}));
   servoA.angles.clear();
   servoB.angles.clear();
 
   // Exact wire format produced by the PC's hardware test, without a coin.
   Serial.incoming.push_back("DISPENSE:test-a:A\r");
+  unsigned long before = fakeTime;
   loop();
-  assert((servoA.angles == std::vector<int>{90, 0}));
+  assert((servoA.angles == std::vector<int>{runA, stopA}));
+  unsigned long expectedMs = SERVO_A_CONTINUOUS ? 300 : 1000;
+  assert(fakeTime - before >= expectedMs && fakeTime - before < expectedMs + 100);
   assert(servoB.angles.empty());
   assert(Serial.outgoing.back() == "DONE:test-a");
   Serial.incoming.push_back("DISPENSE:test-b:B");
   loop();
-  assert((servoB.angles == std::vector<int>{90, 0}));
+  assert((servoB.angles == std::vector<int>{runB, stopB}));
   assert(Serial.outgoing.back() == "DONE:test-b");
 
   // A late response to an old coin must never dispense during idle.
@@ -31,6 +41,7 @@ int main() {
   assert(Serial.outgoing.back() == "DONE:coin-b");
   assert(servoA.angles.size() == 2);
   assert(servoB.angles.size() == 4);
+  assert(servoB.angles.back() == stopB);
 
   // No-dispense and invalid commands do not drive either motor.
   Serial.incoming = {"NONE:2"};
@@ -44,6 +55,7 @@ int main() {
   Serial.incoming = {"DISPENSE:overlap:A", "NONE:3"};
   handleCoinInserted();
   assert(servoA.angles.size() == 4);
+  assert(servoA.angles.back() == stopA);
   bool acknowledged = false;
   for (const auto &line : Serial.outgoing) {
     if (line == "DONE:overlap") acknowledged = true;

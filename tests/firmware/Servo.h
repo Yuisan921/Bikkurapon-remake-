@@ -15,7 +15,7 @@ class String : public std::string {
     auto pos = find(value, from);
     return pos == npos ? -1 : static_cast<int>(pos);
   }
-  String substring(unsigned int from, unsigned int to = npos) const {
+  String substring(unsigned int from, size_t to = npos) const {
     if (from >= size()) return "";
     return substr(from, std::min<size_t>(to, size()) - from);
   }
@@ -39,6 +39,7 @@ class Servo {
   std::vector<int> angles;
   void attach(int) {}
   void write(int angle) { angles.push_back(angle); }
+  void writeMicroseconds(int pulse) { angles.push_back(pulse); }
 };
 
 struct FakeSerial {
@@ -60,4 +61,5 @@ void handleCoinInserted();
 String waitForResponse(const String &, unsigned long);
 bool isTestCommand(const String &);
 void dispenseIfWon(const String &);
-void dispenseFrom(Servo &, int, int);
+void stopServo(Servo &, bool, int, int);
+void dispenseFrom(Servo &, bool, int, int, int, int, unsigned long);
