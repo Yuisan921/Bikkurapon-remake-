@@ -135,17 +135,52 @@ def prepare_hardware_draw():
     return plan
 
 
-def finish_hardware_draw(reservation_id, success):
+last_admin_error = None
+admin_error_lock = threading.Lock()
+
+
+def report_admin_error(error):
+    """客側には出さない詳しいエラーを管理画面へ保存・通知する。"""
+    global last_admin_error
+    normalized = {
+        "code": error.get("code", "hardware_error"),
+        "title": error.get("title", "実機の動作でエラーが発生しました"),
+        "detail": error.get("detail", "Arduino、USBケーブル、サーボ電源を確認してください。"),
+        "occurred_at": time.time(),
+    }
+    with admin_error_lock:
+        last_admin_error = normalized
+    socketio.emit("admin_error", normalized)
+    return normalized
+
+
+def get_last_admin_error():
+    with admin_error_lock:
+        return dict(last_admin_error) if last_admin_error else None
+
+
+def finish_hardware_draw(reservation_id, success, error=None):
     """制御基板の排出完了応答を受け、成功時だけ在庫と表示を確定する。"""
     if not success:
         lottery.cancel_draw(reservation_id)
         socketio.emit("draw_cancelled", {})
         socketio.emit("stock_updated", lottery.get_status())
-        logger.error("カプセル排出を確認できなかったため抽選を取り消しました。")
+        reported = report_admin_error(error or {
+            "code": "dispense_failed",
+            "title": "カプセルを排出できませんでした",
+            "detail": "Arduinoから正常な排出完了を確認できませんでした。USB接続、サーボ電源、カプセル詰まりを確認してください。",
+        })
+        logger.error("カプセル排出を確認できず抽選を取り消しました: %s", reported["detail"])
         return None
     try:
         result = lottery.commit_draw(reservation_id)
     except (KeyError, OutOfStock) as exc:
+        socketio.emit("draw_cancelled", {})
+        report_admin_error({
+            "code": "inventory_commit_failed",
+            "title": "排出後の在庫更新に失敗しました",
+            "detail": f"カプセルは排出されましたが、在庫データを更新できませんでした。管理画面で実在庫を確認してください（{exc}）。",
+        })
         logger.error("排出済み抽選を確定できませんでした: %s", exc)
         return None
     _broadcast_result(result)
@@ -159,8 +194,8 @@ def handle_coin_inserted_from_serial():
     return prepare_hardware_draw()
 
 
-def handle_serial_dispense_result(reservation_id, success):
-    finish_hardware_draw(reservation_id, success)
+def handle_serial_dispense_result(reservation_id, success, error=None):
+    finish_hardware_draw(reservation_id, success, error)
 
 
 def start_serial_bridge():
@@ -241,6 +276,7 @@ _ADMIN_PATHS = {
     "/api/preview_result",
     "/api/demo_draw",
     "/api/hardware_test",
+    "/api/clear_admin_error",
     "/api/restock",
     "/api/set_stock",
     "/api/set_probability",
@@ -325,7 +361,18 @@ def api_system_status():
         "hardware": hardware,
         "ready": lottery.has_stock(),
         "auto_probability_by_stock": lottery.auto_probability_by_stock,
+        "last_error": get_last_admin_error(),
     })
+
+
+@app.route("/api/clear_admin_error", methods=["POST"])
+def api_clear_admin_error():
+    """管理者が確認したエラー表示を消す。"""
+    global last_admin_error
+    with admin_error_lock:
+        last_admin_error = None
+    socketio.emit("admin_error_cleared", {})
+    return jsonify({"ok": True})
 
 
 @app.route("/api/preview_result", methods=["POST"])
@@ -385,7 +432,15 @@ def api_dispense_ack():
     success = payload.get("success")
     if not isinstance(success, bool):
         abort(make_response(jsonify({"error": "invalid or missing field: success"}), 400))
-    result = finish_hardware_draw(reservation_id, success)
+    supplied_error = payload.get("error")
+    error = None
+    if not success and isinstance(supplied_error, str) and supplied_error.strip():
+        error = {
+            "code": "device_reported_failure",
+            "title": "制御基板が排出失敗を通知しました",
+            "detail": supplied_error.strip(),
+        }
+    result = finish_hardware_draw(reservation_id, success, error)
     if result is None:
         return jsonify({"error": "unknown_or_cancelled_reservation"}), 409
     return jsonify(result)

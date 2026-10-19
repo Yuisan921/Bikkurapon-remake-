@@ -190,25 +190,33 @@ class SerialBridge:
             message = f"DISPENSE:{reservation_id}:{hopper}\n"
 
         if not self._write_response(message):
-            self._finish_dispense(reservation_id, False)
+            self._finish_dispense(
+                reservation_id,
+                False,
+                {
+                    "code": "usb_write_failed",
+                    "title": "Arduinoへ命令を送れませんでした",
+                    "detail": f"ホッパー{hopper}の排出命令を送信できませんでした。USBケーブルとCOMポートを確認してください。",
+                },
+            )
             self._serial = None
             return
 
-        success = self._wait_for_ack(reservation_id)
-        self._finish_dispense(reservation_id, success)
+        success, error = self._wait_for_ack(reservation_id, hopper)
+        self._finish_dispense(reservation_id, success, error)
         if not success and self._serial is None:
             logger.warning("排出確認中にUSB接続が切れました。再接続を待ちます。")
 
-    def _finish_dispense(self, reservation_id, success):
+    def _finish_dispense(self, reservation_id, success, error=None):
         if self.on_dispense_result is None:
             return
         try:
-            self.on_dispense_result(reservation_id, success)
+            self.on_dispense_result(reservation_id, success, error)
         except Exception:  # noqa: BLE001 - ACK処理失敗で受信スレッドを止めない
             logger.exception("排出結果の確定処理に失敗しました(reservation=%s)", reservation_id)
 
-    def _wait_for_ack(self, reservation_id):
-        """ESP32がサーボを動かし終えるまで待つ。成功したときだけTrue。"""
+    def _wait_for_ack(self, reservation_id, hopper):
+        """Unoがサーボを動かし終えるまで待ち、失敗時は管理者向け理由も返す。"""
         deadline = time.monotonic() + self.ack_timeout
         expected_done = f"DONE:{reservation_id}"
         expected_failed = f"FAILED:{reservation_id}"
@@ -218,15 +226,27 @@ class SerialBridge:
             except (serial.SerialException, OSError) as exc:
                 logger.warning("排出確認中のシリアルエラー: %s", exc)
                 self._serial = None
-                return False
+                return False, {
+                    "code": "usb_disconnected",
+                    "title": "排出中にUSB接続が切れました",
+                    "detail": f"ホッパー{hopper}の動作完了を待っている途中でArduinoとの通信が切れました。USBケーブルとサーボ電源を確認してください。",
+                }
             if line == expected_done:
-                return True
+                return True, None
             if line == expected_failed:
-                return False
+                return False, {
+                    "code": "arduino_reported_failure",
+                    "title": "Arduinoが排出失敗を通知しました",
+                    "detail": f"ホッパー{hopper}を正常に動かせませんでした。カプセル詰まり、サーボ配線、外部5V電源を確認してください。",
+                }
             if line:
                 logger.debug("排出確認中のメッセージ: %s", line)
         logger.warning("ESP32から排出完了ACKが届きませんでした(reservation=%s)", reservation_id)
-        return False
+        return False, {
+            "code": "ack_timeout",
+            "title": "排出完了を確認できませんでした",
+            "detail": f"ホッパー{hopper}へ命令を送りましたが、{self.ack_timeout:g}秒以内にArduinoから完了通知が届きませんでした。USB接続、サーボ電源、カプセル詰まりを確認してください。",
+        }
 
     def _reconnect(self):
         """シリアルポートを開き直す。接続できたら True、停止要求で止まったら False。"""

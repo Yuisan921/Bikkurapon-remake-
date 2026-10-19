@@ -114,7 +114,7 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          $tag = "v2.2.0"
+          $tag = "v2.3.0"
           $asset = "dist_installer\BikkurapoSetup.exe"
           gh release view $tag *> $null
           if ($LASTEXITCODE -eq 0) {
@@ -122,6 +122,6 @@ jobs:
           } else {
             gh release create $tag $asset `
               --target "$env:GITHUB_SHA" `
-              --title "妖怪まつり びっくらぽん v2.2.0" `
-              --notes "待機画面をシンプルにし、画面演出テスト・実機テスト・在庫連動の確率自動調整を追加しました。管理者権限、Python、BATファイルは不要です。"
+              --title "妖怪まつり びっくらぽん v2.3.0" `
+              --notes "管理画面に、排出エラーの詳しい原因・対象ホッパー・発生時刻を表示する機能を追加しました。管理者権限、Python、BATファイルは不要です。"
           }

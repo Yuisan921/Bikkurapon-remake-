@@ -7,6 +7,11 @@ const hardwareCard = document.getElementById("hardware-card");
 const hardwareTitle = document.getElementById("hardware-title");
 const hardwareDetail = document.getElementById("hardware-detail");
 const hardwareHelp = document.getElementById("hardware-help");
+const adminError = document.getElementById("admin-error");
+const adminErrorTitle = document.getElementById("admin-error-title");
+const adminErrorDetail = document.getElementById("admin-error-detail");
+const adminErrorTime = document.getElementById("admin-error-time");
+const clearAdminErrorButton = document.getElementById("clear-admin-error");
 const stockCard = document.getElementById("stock-card");
 const stockTitle = document.getElementById("stock-title");
 const stockDetail = document.getElementById("stock-detail");
@@ -25,6 +30,38 @@ const autoProbabilityToggle = document.getElementById("auto-probability-toggle")
 let prizes = [];
 let toastTimer = null;
 let autoProbabilityByStock = false;
+let displayedAdminErrorAt = null;
+
+function renderAdminError(error) {
+  if (!error) {
+    adminError.hidden = true;
+    displayedAdminErrorAt = null;
+    return;
+  }
+  adminErrorTitle.textContent = error.title || "実機の動作でエラーが発生しました";
+  adminErrorDetail.textContent = error.detail || "Arduinoとサーボを確認してください。";
+  const occurredAt = new Date(Number(error.occurred_at) * 1000);
+  adminErrorTime.textContent = Number.isNaN(occurredAt.getTime())
+    ? ""
+    : `発生時刻：${occurredAt.toLocaleString("ja-JP")}`;
+  adminError.hidden = false;
+  if (displayedAdminErrorAt !== error.occurred_at) {
+    displayedAdminErrorAt = error.occurred_at;
+    adminError.scrollIntoView({ behavior: "smooth", block: "center" });
+  }
+}
+
+clearAdminErrorButton.addEventListener("click", async () => {
+  clearAdminErrorButton.disabled = true;
+  try {
+    await requestJson("/api/clear_admin_error", { method: "POST" });
+    renderAdminError(null);
+  } catch (error) {
+    notify(error.message, true);
+  } finally {
+    clearAdminErrorButton.disabled = false;
+  }
+});
 
 demoDrawButton.addEventListener("click", async () => {
   demoDrawButton.disabled = true;
@@ -284,6 +321,7 @@ async function loadPrizes() {
 async function loadSystemStatus() {
   try {
     const data = await requestJson("/api/system_status");
+    renderAdminError(data.last_error);
     const hardware = data.hardware;
     if (hardware.connected) {
       hardwareTitle.textContent = "接続済み";
@@ -346,6 +384,8 @@ window.addEventListener("pywebviewready", async () => {
 });
 
 socket.on("stock_updated", renderPrizes);
+socket.on("admin_error", renderAdminError);
+socket.on("admin_error_cleared", () => renderAdminError(null));
 socket.on("connect", () => {
   loadPrizes();
   loadSystemStatus();

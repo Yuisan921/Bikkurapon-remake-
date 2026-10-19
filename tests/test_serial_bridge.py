@@ -47,8 +47,8 @@ def test_callback_error_replies_none_and_keeps_running():
         "COM_TEST",
         115200,
         on_coin,
-        on_dispense_result=lambda reservation_id, success: results.append(
-            (reservation_id, success)
+        on_dispense_result=lambda reservation_id, success, error: results.append(
+            (reservation_id, success, error)
         ),
         reconnect_interval=0,
         ack_timeout=0.1,
@@ -59,7 +59,7 @@ def test_callback_error_replies_none_and_keeps_running():
     bridge._run()
 
     assert fake.written == ["NONE:1\n", "DISPENSE:2:r2:A\n"]
-    assert results == [("r2", True)]
+    assert results == [("r2", True, None)]
 
 
 def test_initially_missing_device_is_detected_after_start(monkeypatch):
@@ -92,8 +92,8 @@ def test_reconnects_after_serial_error(monkeypatch):
         "COM3",
         115200,
         lambda: _plan("r2", "b"),
-        on_dispense_result=lambda reservation_id, success: results.append(
-            (reservation_id, success)
+        on_dispense_result=lambda reservation_id, success, error: results.append(
+            (reservation_id, success, error)
         ),
         port_finder=lambda: "COM9",
         reconnect_interval=0,
@@ -114,7 +114,7 @@ def test_reconnects_after_serial_error(monkeypatch):
     assert opened_ports == ["COM9"]
     assert bridge.port == "COM9"
     assert second.written == ["DISPENSE:2:r2:B\n"]
-    assert results == [("r2", True)]
+    assert results == [("r2", True, None)]
 
 
 def test_failed_ack_reports_failure():
@@ -123,8 +123,8 @@ def test_failed_ack_reports_failure():
         "COM3",
         115200,
         lambda: _plan("r3"),
-        on_dispense_result=lambda reservation_id, success: results.append(
-            (reservation_id, success)
+        on_dispense_result=lambda reservation_id, success, error: results.append(
+            (reservation_id, success, error)
         ),
         reconnect_interval=0,
         ack_timeout=0.1,
@@ -133,7 +133,8 @@ def test_failed_ack_reports_failure():
 
     bridge._run()
 
-    assert results == [("r3", False)]
+    assert results[0][0:2] == ("r3", False)
+    assert results[0][2]["code"] == "arduino_reported_failure"
 
 
 def test_stop_during_reconnect_ends_the_loop(monkeypatch):
@@ -186,8 +187,8 @@ def test_hardware_test_uses_same_dispense_flow_as_coin():
         "COM3",
         115200,
         lambda: _plan("test-reservation", "b"),
-        on_dispense_result=lambda reservation_id, success: results.append(
-            (reservation_id, success)
+        on_dispense_result=lambda reservation_id, success, error: results.append(
+            (reservation_id, success, error)
         ),
         ack_timeout=0.1,
     )
@@ -198,4 +199,4 @@ def test_hardware_test_uses_same_dispense_flow_as_coin():
     bridge._run()
 
     assert fake.written == ["DISPENSE:test-reservation:B\n"]
-    assert results == [("test-reservation", True)]
+    assert results == [("test-reservation", True, None)]

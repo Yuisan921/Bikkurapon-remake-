@@ -33,6 +33,7 @@ def server(server_module, tmp_path, monkeypatch):
     monkeypatch.setitem(server_module.settings, "allow_remote_insert_coin", False)
     monkeypatch.setitem(server_module.settings, "device_token", "test-device-token-1234")
     monkeypatch.setitem(server_module.settings, "auto_probability_by_stock", False)
+    monkeypatch.setattr(server_module, "last_admin_error", None)
     return server_module
 
 
@@ -85,11 +86,38 @@ def test_serial_coin_commits_only_after_successful_ack(server):
 
 
 def test_serial_failed_ack_cancels_without_decrement(server):
+    socket_client = server.socketio.test_client(server.app)
+    socket_client.get_received()
     plan = server.handle_coin_inserted_from_serial()
 
-    assert server.finish_hardware_draw(plan["reservation_id"], False) is None
+    assert server.finish_hardware_draw(
+        plan["reservation_id"],
+        False,
+        {
+            "code": "ack_timeout",
+            "title": "排出完了を確認できませんでした",
+            "detail": "ホッパーAから5秒以内に完了通知が届きませんでした。",
+        },
+    ) is None
     persisted = json.loads(server.lottery.stock_data_path.read_text(encoding="utf-8"))
     assert sum(persisted.values()) == 2
+    events = socket_client.get_received()
+    assert "draw_cancelled" in [event["name"] for event in events]
+    admin_event = next(event for event in events if event["name"] == "admin_error")
+    assert admin_event["args"][0]["code"] == "ack_timeout"
+    assert "ホッパーA" in admin_event["args"][0]["detail"]
+
+    status = server.app.test_client().get("/api/system_status").get_json()
+    assert status["last_error"]["title"] == "排出完了を確認できませんでした"
+
+
+def test_admin_can_clear_persisted_error(server):
+    server.report_admin_error({"title": "テストエラー", "detail": "確認用"})
+
+    response = server.app.test_client().post("/api/clear_admin_error")
+
+    assert response.status_code == 200
+    assert server.app.test_client().get("/api/system_status").get_json()["last_error"] is None
 
 
 def test_normal_draw_broadcasts_result(server):
@@ -197,6 +225,7 @@ REMOTE = {"REMOTE_ADDR": "192.168.0.50"}
         ("/api/restock", {"prize_id": "atari", "amount": 1}),
         ("/api/set_probability", {"prize_id": "atari", "probability": 1.0}),
         ("/api/set_auto_probability", {"enabled": True}),
+        ("/api/clear_admin_error", {}),
     ],
 )
 def test_remote_cannot_change_stock_or_probability_by_default(server, path, body):

@@ -175,6 +175,13 @@ button { color: inherit; }
 .notice-mark { display: grid; place-items: center; flex: 0 0 auto; width: 34px; aspect-ratio: 1; border-radius: 50%; color: #fff; font-weight: 1000; background: var(--orange); }
 .notice strong { font-size: .9rem; }
 .notice p { margin: 2px 0 0; font-size: .78rem; }
+.notice.danger { align-items: flex-start; border-color: #e89b8e; color: #7c2927; background: #fff0ed; }
+.notice.danger .notice-mark { background: var(--red); }
+.error-copy { flex: 1; min-width: 0; }
+.error-copy strong { display: block; font-size: 1rem; }
+.error-copy p { margin-top: 5px; font-size: .82rem; line-height: 1.55; }
+.error-copy small { display: block; margin-top: 6px; color: #9b5b55; font-size: .69rem; }
+.error-notice button { flex: 0 0 auto; padding: 8px 12px; border: 1px solid #d9897d; border-radius: 9px; color: #7c2927; font-size: .72rem; font-weight: 900; background: #fff; cursor: pointer; }
 
 .panel {
   margin-top: 16px;
