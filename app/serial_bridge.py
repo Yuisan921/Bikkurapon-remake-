@@ -1,8 +1,9 @@
 """Arduino Uno / XIAO ESP32-C3とのUSBシリアル通信を担当するブリッジ。
 
 UnoからCOIN:<番号>を受信したら抽選する。演出待ちを使う場合はNONE:<番号>で
-Unoの応答待ちを解除し、画面の演出完了後にRUN:<予約番号>:<A/B>:<回転時間ms>を
-送る。DONE:<予約番号>の確認後だけ在庫を減らす。従来のDISPENSEにも対応する。
+Unoの応答待ちを解除し、画面の演出完了後に
+DISPENSE:<予約番号>~<回転時間ms>:<A/B>を送る。以前のUnoプログラムでも
+DISPENSE命令として動き、新版では末尾の回転時間も反映する。
 """
 
 import logging
@@ -203,8 +204,12 @@ class SerialBridge:
                 })
                 return
             coin_id = None
+        ack_reservation_id = reservation_id
         if plan.get("run_ms") is not None:
-            message = f"RUN:{reservation_id}:{hopper}:{plan['run_ms']}\n"
+            # v2.3以前のUnoも理解できるDISPENSE形式を保つ。新版ファームウェアは
+            # 予約番号末尾の~ミリ秒を読み、旧版は自分の既定時間で安全に動く。
+            ack_reservation_id = f"{reservation_id}~{plan['run_ms']}"
+            message = f"DISPENSE:{ack_reservation_id}:{hopper}\n"
         elif coin_id:
             message = f"DISPENSE:{coin_id}:{reservation_id}:{hopper}\n"
         else:
@@ -223,7 +228,7 @@ class SerialBridge:
             self._serial = None
             return
 
-        success, error = self._wait_for_ack(reservation_id, hopper)
+        success, error = self._wait_for_ack(ack_reservation_id, hopper)
         self._finish_dispense(reservation_id, success, error)
         if not success and self._serial is None:
             logger.warning("排出確認中にUSB接続が切れました。再接続を待ちます。")

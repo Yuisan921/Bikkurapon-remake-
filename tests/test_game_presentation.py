@@ -41,7 +41,7 @@ def test_fallback_result_finishes_before_hopper_moves(display):
     assert bridge._serial.written == []
     page.wait_for_function("document.getElementById('result-message').textContent === 'カプセルを受け取ってね！'", timeout=15000)
     worker.join(2)
-    assert sum(line.startswith("RUN:") for line in bridge._serial.written) == 1
+    assert sum(line.startswith("DISPENSE:") for line in bridge._serial.written) == 1
 
 
 def test_video_end_event_triggers_dispense_only_once(server, display):
@@ -65,4 +65,4 @@ def test_video_end_event_triggers_dispense_only_once(server, display):
     page.wait_for_function("document.getElementById('result-message').textContent === 'カプセルを受け取ってね！'")
     page.evaluate("document.getElementById('result-video').dispatchEvent(new Event('ended'))")
     worker.join(2)
-    assert sum(line.startswith("RUN:") for line in bridge._serial.written) == 1
+    assert sum(line.startswith("DISPENSE:") for line in bridge._serial.written) == 1

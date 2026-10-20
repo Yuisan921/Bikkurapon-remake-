@@ -36,7 +36,7 @@ class AckSerial:
 
     def readline(self):
         command = self.written[-1].split(":")
-        assert command[0] == "RUN"
+        assert command[0] == "DISPENSE"
         return f"DONE:{command[1]}\n".encode()
 
 
@@ -74,17 +74,17 @@ def test_only_dispenses_after_matching_animation_finishes(server, monkeypatch, c
         client = server.app.test_client()
         assert client.post("/api/demo_draw").status_code == 409
         assert client.post("/api/animation_finished", json={"reservation_id": "old"}).status_code == 409
-        assert not any(line.startswith("RUN:") for line in bridge._serial.written)
+        assert not any(line.startswith("DISPENSE:") for line in bridge._serial.written)
         assert client.post("/api/animation_finished", json={"reservation_id": plan["reservation_id"]}).status_code == 200
     finally:
         worker.join(3)
     assert not worker.is_alive()
-    assert bridge._serial.written[-1] == f"RUN:{plan['reservation_id']}:A:770\n"
+    assert bridge._serial.written[-1] == f"DISPENSE:{plan['reservation_id']}~770:A\n"
     assert json.loads(server.lottery.stock_data_path.read_text())["atari"] == 1
     assert [name for name, _ in events].count("draw_result") == 1
     assert [name for name, _ in events].count("dispense_completed") == 1
     assert client.post("/api/animation_finished", json={"reservation_id": plan["reservation_id"]}).status_code == 409
-    assert sum(line.startswith("RUN:") for line in bridge._serial.written) == 1
+    assert sum(line.startswith("DISPENSE:") for line in bridge._serial.written) == 1
 
 
 def test_missing_animation_completion_cancels_without_dispensing(server, monkeypatch):

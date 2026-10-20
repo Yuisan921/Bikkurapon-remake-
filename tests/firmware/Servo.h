@@ -61,6 +61,7 @@ void handleCoinInserted();
 String waitForResponse(const String &, unsigned long);
 bool isTestCommand(const String &);
 void dispenseIfWon(const String &);
+bool parseRunMilliseconds(const String &, unsigned long &);
 void handleTimedCommand(const String &);
 void executeDispense(const String &, const String &, unsigned long);
 void stopServo(Servo &, bool, int, int);

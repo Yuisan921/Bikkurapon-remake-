@@ -212,7 +212,29 @@ void dispenseIfWon(
   String hopper = response.substring(reservationEnd + 1);
   if (reservationId.length() == 0) return;
 
-  executeDispense(reservationId, hopper, 0);
+  // PC v2.4.1以降は、旧ファームウェアでも認識できるDISPENSE形式を維持しつつ、
+  // 予約番号の末尾へ「~回転時間ms」を付ける。ACKには末尾付きの番号を返す。
+  unsigned long runMs = 0;
+  int timingSeparator = reservationId.indexOf('~');
+  if (timingSeparator >= 0) {
+    String duration = reservationId.substring(timingSeparator + 1);
+    if (!parseRunMilliseconds(duration, runMs)) {
+      Serial.println("FAILED:" + reservationId);
+      return;
+    }
+  }
+
+  executeDispense(reservationId, hopper, runMs);
+}
+
+bool parseRunMilliseconds(const String &duration, unsigned long &runMs) {
+  runMs = 0;
+  bool valid = duration.length() > 0 && duration.length() <= 4;
+  for (unsigned int i = 0; valid && i < duration.length(); ++i) {
+    if (duration[i] < '0' || duration[i] > '9') valid = false;
+    else runMs = runMs * 10 + (duration[i] - '0');
+  }
+  return valid && runMs >= 50 && runMs <= 2000;
 }
 
 void handleTimedCommand(const String &command) {
@@ -224,12 +246,7 @@ void handleTimedCommand(const String &command) {
   String hopper = command.substring(second + 1, third);
   String duration = command.substring(third + 1);
   unsigned long runMs = 0;
-  bool valid = duration.length() > 0 && duration.length() <= 4;
-  for (unsigned int i = 0; valid && i < duration.length(); ++i) {
-    if (duration[i] < '0' || duration[i] > '9') valid = false;
-    else runMs = runMs * 10 + (duration[i] - '0');
-  }
-  if (!valid || runMs < 50 || runMs > 2000) {
+  if (!parseRunMilliseconds(duration, runMs)) {
     Serial.println("FAILED:" + reservationId);
     return;
   }

@@ -76,6 +76,16 @@ int main() {
   assert(servoA.angles.size() == aCount + 2 && servoA.angles.back() == stopA);
   assert(Serial.outgoing.back() == "DONE:after-video");
 
+  // v2.4.1 PC uses a legacy-compatible DISPENSE command and appends timing to
+  // the reservation token. It must use that timing and echo the exact token.
+  Serial.incoming = {"DISPENSE:compatible~920:B"};
+  before = fakeTime;
+  loop();
+  expectedMs = SERVO_B_CONTINUOUS ? 920 : 1000;
+  assert(fakeTime - before >= expectedMs && fakeTime - before < expectedMs + 100);
+  assert(servoB.angles.back() == stopB);
+  assert(Serial.outgoing.back() == "DONE:compatible~920");
+
   for (const auto &bad : {"0", "2001", "-100", "770xyz", "", "99999999"}) {
     Serial.incoming = {String("RUN:invalid:A:") + bad};
     loop();

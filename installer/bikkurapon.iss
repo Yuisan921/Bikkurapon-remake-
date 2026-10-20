@@ -9,7 +9,7 @@
 ; LocalAppData\Programs にインストールする。
 
 #define MyAppName "妖怪まつり びっくらぽん"
-#define MyAppVersion "2.4.0"
+#define MyAppVersion "2.4.1"
 #define MyAppExeName "bikkurapon.exe"
 
 [Setup]
