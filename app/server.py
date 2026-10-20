@@ -4,8 +4,7 @@
 コイン投入通知を受けて抽選するだけ。当たり用・はずれ用それぞれに
 専用のホッパー(サーボ)があり、抽選結果の "hopper" フィールド("a"/"b")
 に応じてどちらを動かすかをUSBシリアル経由でUnoに伝える。
-Uno側はそれだけを見てサーボを動かせる(サーバー→Unoへの呼び出しは
-発生しない)。
+USB接続では、ゲーム画面の演出完了通知を受けてからUnoへ排出命令を送る。
 
 Unoを接続しない場合でも、管理画面から在庫を減らさない画面演出テストを行える。
 """
@@ -27,6 +26,7 @@ from app.browser_launcher import open_default_windows, open_windows
 from app.config_setup import ensure_config_dir, migrate_legacy_data
 from app.lottery import Lottery, OutOfStock, _write_json_atomic
 from app.paths import BASE_DIR, BUNDLE_DIR, LEGACY_BASE_DIR
+from app.presentation_gate import PresentationGate
 from app.serial_bridge import SerialBridge, find_serial_port
 
 logging.basicConfig(level=logging.INFO)
@@ -78,8 +78,11 @@ lottery = Lottery(
     prizes_config_path=CONFIG_DIR / "prizes.json",
     stock_data_path=DATA_DIR / "stock.json",
     auto_probability_by_stock=settings.get("auto_probability_by_stock", False),
+    reservation_timeout=360,
 )
 settings_lock = threading.Lock()
+presentation_gate = PresentationGate()
+PRESENTATION_TIMEOUT_SECONDS = 300
 
 
 def save_settings():
@@ -116,7 +119,7 @@ def run_draw_and_broadcast():
 
 
 def prepare_hardware_draw():
-    """実物の排出用に抽選結果を予約する。在庫確定と表示はACK後に行う。"""
+    """実物の排出用に結果を予約する。在庫確定はACK後。USB版の演出は排出前。"""
     try:
         plan = lottery.reserve_draw()
     except OutOfStock:
@@ -159,7 +162,7 @@ def get_last_admin_error():
         return dict(last_admin_error) if last_admin_error else None
 
 
-def finish_hardware_draw(reservation_id, success, error=None):
+def finish_hardware_draw(reservation_id, success, error=None, already_presented=False):
     """制御基板の排出完了応答を受け、成功時だけ在庫と表示を確定する。"""
     if not success:
         lottery.cancel_draw(reservation_id)
@@ -183,7 +186,11 @@ def finish_hardware_draw(reservation_id, success, error=None):
         })
         logger.error("排出済み抽選を確定できませんでした: %s", exc)
         return None
-    _broadcast_result(result)
+    if already_presented:
+        socketio.emit("dispense_completed", {**result, "reservation_id": reservation_id})
+        socketio.emit("stock_updated", lottery.get_status())
+    else:
+        _broadcast_result(result)
     return result
 
 
@@ -191,11 +198,34 @@ def handle_coin_inserted_from_serial():
     """UnoからUSBシリアルで "COIN" を受け取ったときに呼ばれる。
     戻り値は動かすべきホッパー記号("a"/"b"。どちらも使わない・在庫切れなら None)。
     """
-    return prepare_hardware_draw()
+    plan = prepare_hardware_draw()
+    if plan and plan.get("hopper"):
+        plan["run_ms"] = servo_run_times()[str(plan["hopper"]).lower()]
+    return plan
+
+
+def servo_run_times():
+    values = settings.get("servo_run_ms", {})
+    result = {}
+    for hopper in ("a", "b"):
+        try:
+            value = int(values.get(hopper, 770))
+        except (TypeError, ValueError):
+            value = 770
+        result[hopper] = max(50, min(2000, value))
+    return result
+
+
+def wait_for_presentation(plan):
+    return presentation_gate.wait(
+        plan["reservation_id"],
+        lambda: socketio.emit("draw_result", {**plan, "dispense_after_animation": True}),
+        PRESENTATION_TIMEOUT_SECONDS,
+    )
 
 
 def handle_serial_dispense_result(reservation_id, success, error=None):
-    finish_hardware_draw(reservation_id, success, error)
+    finish_hardware_draw(reservation_id, success, error, already_presented=True)
 
 
 def start_serial_bridge():
@@ -213,6 +243,7 @@ def start_serial_bridge():
         baudrate=settings.get("serial_baudrate", 115200),
         on_coin_inserted=handle_coin_inserted_from_serial,
         on_dispense_result=handle_serial_dispense_result,
+        before_dispense=wait_for_presentation,
         # "auto" のときは、USBを抜き差ししてポート名が変わっても探し直す
         port_finder=(lambda: find_serial_port(warn=False)) if port_setting == "auto" else None,
     )
@@ -277,6 +308,8 @@ _ADMIN_PATHS = {
     "/api/demo_draw",
     "/api/hardware_test",
     "/api/clear_admin_error",
+    "/api/animation_finished",
+    "/api/set_servo_timing",
     "/api/restock",
     "/api/set_stock",
     "/api/set_probability",
@@ -297,6 +330,8 @@ def _valid_device_token():
 
 @app.before_request
 def restrict_remote_access():
+    if request.path == "/api/animation_finished" and request.remote_addr not in _LOOPBACK_ADDRESSES:
+        abort(403)
     if request.remote_addr in _LOOPBACK_ADDRESSES:
         return None
     if request.path in _ADMIN_PATHS and not settings.get("allow_remote_admin", False):
@@ -362,6 +397,7 @@ def api_system_status():
         "ready": lottery.has_stock(),
         "auto_probability_by_stock": lottery.auto_probability_by_stock,
         "last_error": get_last_admin_error(),
+        "servo_run_ms": servo_run_times(),
     })
 
 
@@ -378,6 +414,8 @@ def api_clear_admin_error():
 @app.route("/api/preview_result", methods=["POST"])
 def api_preview_result():
     """在庫やホッパーを動かさず、選んだ結果の画面演出だけを確認する。"""
+    if physical_draw_busy():
+        return jsonify({"error": "実機の抽選・排出が終わるまでお待ちください"}), 409
     prize_id = _field(_json_payload(), "prize_id", str)
     prize = next((item for item in lottery.get_status() if item["id"] == prize_id), None)
     if prize is None:
@@ -390,6 +428,8 @@ def api_preview_result():
 @app.route("/api/demo_draw", methods=["POST"])
 def api_demo_draw():
     """設定中の確率で1回試す。在庫・Arduino・ホッパーには触れない。"""
+    if physical_draw_busy():
+        return jsonify({"error": "実機の抽選・排出が終わるまでお待ちください"}), 409
     try:
         result = lottery.preview_draw()
     except OutOfStock:
@@ -397,6 +437,34 @@ def api_demo_draw():
     socketio.emit("draw_started", {"preview": True})
     socketio.emit("draw_result", result)
     return jsonify(result)
+
+
+def physical_draw_busy():
+    return presentation_gate.busy or (
+        serial_bridge is not None and serial_bridge.get_status().get("busy", False)
+    )
+
+
+@app.route("/api/animation_finished", methods=["POST"])
+def api_animation_finished():
+    reservation_id = _field(_json_payload(), "reservation_id", str)
+    if not presentation_gate.complete(reservation_id):
+        return jsonify({"error": "この抽選は終了したか、取り消されました"}), 409
+    return jsonify({"ok": True})
+
+
+@app.route("/api/set_servo_timing", methods=["POST"])
+def api_set_servo_timing():
+    payload = _json_payload()
+    values = {}
+    for hopper in ("a", "b"):
+        value = payload.get(hopper)
+        if type(value) is not int or not 50 <= value <= 2000:
+            return jsonify({"error": "回転時間は50〜2000ミリ秒の整数で指定してください"}), 400
+        values[hopper] = value
+    settings["servo_run_ms"] = values
+    save_settings()
+    return jsonify({"servo_run_ms": values})
 
 
 @app.route("/api/hardware_test", methods=["POST"])
@@ -412,6 +480,8 @@ def api_hardware_test():
 @app.route("/api/insert_coin", methods=["POST"])
 def api_insert_coin():
     """ローカルテストまたはWi-Fi制御基板からコイン投入を通知する。"""
+    if physical_draw_busy():
+        return jsonify({"error": "実機の抽選・排出中です"}), 409
     # ローカルのテストボタンは実物を動かさないので即時確定する。
     if request.remote_addr in _LOOPBACK_ADDRESSES:
         result = run_draw_and_broadcast()

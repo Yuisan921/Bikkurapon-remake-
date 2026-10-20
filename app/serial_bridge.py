@@ -1,11 +1,8 @@
 """Arduino Uno / XIAO ESP32-C3とのUSBシリアル通信を担当するブリッジ。
 
-ESP32から "COIN" という行を受け取ったらコールバックを呼び、その戻り値
-(景品が使うホッパー記号 "a"/"b"、どちらも使わないなら None)に応じて
-"DISPENSE:A" / "DISPENSE:B" または "NONE" を1行返す。
-サーボの角度自体はESP32ファームウェア側の固定値で、サーバーは
-「どちらのホッパーを動かすか」だけを伝える。プロトコルはこれだけの
-シンプルなテキストベース。
+UnoからCOIN:<番号>を受信したら抽選する。演出待ちを使う場合はNONE:<番号>で
+Unoの応答待ちを解除し、画面の演出完了後にRUN:<予約番号>:<A/B>:<回転時間ms>を
+送る。DONE:<予約番号>の確認後だけ在庫を減らす。従来のDISPENSEにも対応する。
 """
 
 import logging
@@ -69,6 +66,7 @@ class SerialBridge:
         port_finder=None,
         reconnect_interval=2.0,
         ack_timeout=5.0,
+        before_dispense=None,
     ):
         """
         port_finder: 再接続のときにポートを探し直す関数(任意)。USBを抜き差しすると
@@ -83,6 +81,7 @@ class SerialBridge:
         self.port_finder = port_finder
         self.reconnect_interval = reconnect_interval
         self.ack_timeout = ack_timeout
+        self.before_dispense = before_dispense
         self._serial = None
         self._stop_event = threading.Event()
         self._test_requested = threading.Event()
@@ -184,7 +183,29 @@ class SerialBridge:
 
         reservation_id = plan["reservation_id"]
         hopper = str(plan["hopper"]).upper()
-        if coin_id:
+        if self.before_dispense is not None:
+            # Unoのコイン応答待ち(3秒)を先に解除。演出後は待機中のRUN命令で動かす。
+            if coin_id and not self._write_response(f"NONE:{coin_id}\n"):
+                self._finish_dispense(reservation_id, False, {
+                    "code": "usb_write_failed", "title": "Arduinoとの通信に失敗しました",
+                    "detail": "演出前の待機命令を送れませんでした。USB接続を確認してください。",
+                })
+                return
+            try:
+                ready = self.before_dispense(plan)
+            except Exception:
+                logger.exception("演出完了待ちでエラーが発生しました")
+                ready = False
+            if not ready or self._stop_event.is_set():
+                self._finish_dispense(reservation_id, False, {
+                    "code": "presentation_timeout", "title": "抽選画面の演出終了を確認できませんでした",
+                    "detail": "排出せずに抽選を取り消しました。ゲーム画面を開き、動画が最後まで再生できるか確認してください。",
+                })
+                return
+            coin_id = None
+        if plan.get("run_ms") is not None:
+            message = f"RUN:{reservation_id}:{hopper}:{plan['run_ms']}\n"
+        elif coin_id:
             message = f"DISPENSE:{coin_id}:{reservation_id}:{hopper}\n"
         else:
             message = f"DISPENSE:{reservation_id}:{hopper}\n"

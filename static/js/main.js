@@ -37,6 +37,53 @@ let captionTimer = null;
 let revealTimer = null;
 let resetTimer = null;
 let queuedResult = null;
+let deferredResult = null;
+let completionSent = false;
+
+async function finishPresentation(result) {
+  if (!result.dispense_after_animation) {
+    showIdle();
+    return;
+  }
+  if (completionSent || deferredResult?.reservation_id !== result.reservation_id) return;
+  completionSent = true;
+  clearAnimationTimers();
+  resetResultVideo();
+  confetti.replaceChildren();
+  stage.className = "state-result";
+  resultSymbol.textContent = "↓";
+  resultTitle.textContent = "カプセルを出しているよ";
+  resultMessage.textContent = "そのまま待ってね";
+  showScreen("result");
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    try {
+      const response = await fetch("/api/animation_finished", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ reservation_id: result.reservation_id }),
+      });
+      if (response.ok) return;
+    } catch (_error) {
+      // 一時的な通信失敗なら短く待って再送する。
+    }
+    await new Promise((resolve) => window.setTimeout(resolve, 500));
+  }
+  showDispenseError();
+}
+
+function showDispenseCompleted(result) {
+  if (deferredResult?.reservation_id !== result.reservation_id) return;
+  clearAnimationTimers();
+  resetResultVideo();
+  deferredResult = null;
+  const isWinner = result.id === "atari" || String(result.hopper).toLowerCase() === "a";
+  stage.className = `state-result ${isWinner ? "state-atari" : "state-hazure"}`;
+  resultSymbol.textContent = isWinner ? "福" : "縁";
+  resultTitle.textContent = result.name;
+  resultMessage.textContent = "カプセルを受け取ってね！";
+  showScreen("result");
+  resetTimer = window.setTimeout(showIdle, 3000);
+}
 
 function showScreen(name) {
   Object.values(screens).forEach((screen) => screen.classList.add("hidden"));
@@ -67,6 +114,8 @@ function showIdle() {
   resetResultVideo();
   busy = false;
   queuedResult = null;
+  deferredResult = null;
+  completionSent = false;
   confetti.replaceChildren();
   if (!hasStock) {
     showSoldout();
@@ -87,6 +136,8 @@ function startPlaying() {
   clearAnimationTimers();
   busy = true;
   queuedResult = null;
+  deferredResult = null;
+  completionSent = false;
   playingStartedAt = Date.now();
   stage.className = "state-playing";
   showScreen("playing");
@@ -127,12 +178,14 @@ function showFallbackResult(result) {
   resultTitle.textContent = result.name;
   resultMessage.textContent = result.preview
     ? "これは画面だけのテストです"
+    : result.dispense_after_animation
+      ? "演出が終わったらカプセルが出るよ"
     : isWinner
       ? "大当たりのカプセルを受け取ってね！"
       : "参加賞のカプセルを受け取ってね！";
   showScreen("result");
   makeConfetti();
-  resetTimer = window.setTimeout(showIdle, RESULT_DISPLAY_MS);
+  resetTimer = window.setTimeout(() => finishPresentation(result), RESULT_DISPLAY_MS);
 }
 
 function revealResult(result) {
@@ -157,7 +210,7 @@ function revealResult(result) {
   };
   resultVideo.onerror = fallback;
   resultVideo.onended = () => {
-    resetTimer = window.setTimeout(showIdle, 500);
+    finishPresentation(result);
   };
   resultVideo.src = result.video;
   resultVideo.load();
@@ -167,6 +220,7 @@ function revealResult(result) {
 
 function queueResult(result) {
   if (!busy) startPlaying();
+  if (result.dispense_after_animation) deferredResult = result;
   queuedResult = result;
   const elapsed = Date.now() - playingStartedAt;
   revealTimer = window.setTimeout(() => {
@@ -177,6 +231,8 @@ function queueResult(result) {
 
 function showDispenseError() {
   clearAnimationTimers();
+  resetResultVideo();
+  deferredResult = null;
   busy = true;
   stage.className = "state-error";
   showScreen("error");
@@ -202,6 +258,7 @@ socket.on("stock_updated", applyStock);
 socket.on("draw_started", startPlaying);
 socket.on("draw_result", queueResult);
 socket.on("draw_cancelled", showDispenseError);
+socket.on("dispense_completed", showDispenseCompleted);
 socket.on("out_of_stock", () => {
   hasStock = false;
   showSoldout();

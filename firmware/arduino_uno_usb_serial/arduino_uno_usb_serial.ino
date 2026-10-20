@@ -23,8 +23,9 @@ const int SERVO_A_STOP_US = 1500;
 const int SERVO_B_STOP_US = 1500;
 const int SERVO_A_RUN_US = 1600;
 const int SERVO_B_RUN_US = 1600;
-const unsigned long SERVO_A_RUN_MS = 300;
-const unsigned long SERVO_B_RUN_MS = 300;
+// 実測0.3秒で約70度 → 半回転の目安は0.77秒。PC管理画面でも調整できる。
+const unsigned long SERVO_A_RUN_MS = 770;
+const unsigned long SERVO_B_RUN_MS = 770;
 
 // 以下の角度は CONTINUOUS が false のサーボだけに使う。
 const int SERVO_A_REST_ANGLE = 0;
@@ -63,7 +64,9 @@ void loop() {
   if (Serial.available()) {
     String command = Serial.readStringUntil('\n');
     command.trim();
-    if (isTestCommand(command)) {
+    if (command.startsWith("RUN:")) {
+      handleTimedCommand(command);
+    } else if (isTestCommand(command)) {
       dispenseIfWon(command);
     }
   }
@@ -133,6 +136,11 @@ String waitForResponse(
         Serial.readStringUntil('\n');
 
       line.trim();
+
+      if (line.startsWith("RUN:")) {
+        handleTimedCommand(line);
+        continue;
+      }
 
       // コインの応答待ち中に管理画面からテスト命令が届いた場合も処理する。
       if (isTestCommand(line)) {
@@ -204,6 +212,31 @@ void dispenseIfWon(
   String hopper = response.substring(reservationEnd + 1);
   if (reservationId.length() == 0) return;
 
+  executeDispense(reservationId, hopper, 0);
+}
+
+void handleTimedCommand(const String &command) {
+  // RUN:<reservationId>:<hopper>:<milliseconds> は演出終了後にPCから届く。
+  int second = command.indexOf(':', 4);
+  int third = command.indexOf(':', second + 1);
+  if (second <= 4 || third < 0) return;
+  String reservationId = command.substring(4, second);
+  String hopper = command.substring(second + 1, third);
+  String duration = command.substring(third + 1);
+  unsigned long runMs = 0;
+  bool valid = duration.length() > 0 && duration.length() <= 4;
+  for (unsigned int i = 0; valid && i < duration.length(); ++i) {
+    if (duration[i] < '0' || duration[i] > '9') valid = false;
+    else runMs = runMs * 10 + (duration[i] - '0');
+  }
+  if (!valid || runMs < 50 || runMs > 2000) {
+    Serial.println("FAILED:" + reservationId);
+    return;
+  }
+  executeDispense(reservationId, hopper, runMs);
+}
+
+void executeDispense(const String &reservationId, const String &hopper, unsigned long runMs) {
   bool success = false;
 
   if (hopper == "A") {
@@ -219,7 +252,7 @@ void dispenseIfWon(
       SERVO_A_DISPENSE_ANGLE,
       SERVO_A_STOP_US,
       SERVO_A_RUN_US,
-      SERVO_A_RUN_MS
+      runMs ? runMs : SERVO_A_RUN_MS
     );
 
     success = true;
@@ -238,7 +271,7 @@ void dispenseIfWon(
       SERVO_B_DISPENSE_ANGLE,
       SERVO_B_STOP_US,
       SERVO_B_RUN_US,
-      SERVO_B_RUN_MS
+      runMs ? runMs : SERVO_B_RUN_MS
     );
 
     success = true;

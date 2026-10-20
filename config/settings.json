@@ -8,6 +8,7 @@
   "serial_baudrate": 115200,
   "desktop_mode": true,
   "auto_probability_by_stock": false,
+  "servo_run_ms": {"a": 770, "b": 770},
   "game_fullscreen": false,
   "auto_open_browser": true,
   "kiosk_mode": false,

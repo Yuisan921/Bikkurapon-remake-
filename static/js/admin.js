@@ -26,6 +26,28 @@ const demoDrawButton = document.getElementById("demo-draw-button");
 const hardwareTestButton = document.getElementById("hardware-test-button");
 const hardwareTestDetail = document.getElementById("hardware-test-detail");
 const autoProbabilityToggle = document.getElementById("auto-probability-toggle");
+const servoTimingForm = document.getElementById("servo-timing-form");
+const servoTimeA = document.getElementById("servo-time-a");
+const servoTimeB = document.getElementById("servo-time-b");
+let servoTimingLoaded = false;
+
+servoTimingForm.addEventListener("submit", async (event) => {
+  event.preventDefault();
+  const button = servoTimingForm.querySelector("button");
+  button.disabled = true;
+  try {
+    await requestJson("/api/set_servo_timing", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ a: Number(servoTimeA.value), b: Number(servoTimeB.value) }),
+    });
+    notify("回転時間を保存しました。次の抽選から反映します");
+  } catch (error) {
+    notify(error.message, true);
+  } finally {
+    button.disabled = false;
+  }
+});
 
 let prizes = [];
 let toastTimer = null;
@@ -321,6 +343,11 @@ async function loadPrizes() {
 async function loadSystemStatus() {
   try {
     const data = await requestJson("/api/system_status");
+    if (!servoTimingLoaded && data.servo_run_ms) {
+      servoTimeA.value = data.servo_run_ms.a;
+      servoTimeB.value = data.servo_run_ms.b;
+      servoTimingLoaded = true;
+    }
     renderAdminError(data.last_error);
     const hardware = data.hardware;
     if (hardware.connected) {

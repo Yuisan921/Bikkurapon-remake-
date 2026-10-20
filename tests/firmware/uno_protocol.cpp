@@ -18,7 +18,7 @@ int main() {
   unsigned long before = fakeTime;
   loop();
   assert((servoA.angles == std::vector<int>{runA, stopA}));
-  unsigned long expectedMs = SERVO_A_CONTINUOUS ? 300 : 1000;
+  unsigned long expectedMs = SERVO_A_CONTINUOUS ? 770 : 1000;
   assert(fakeTime - before >= expectedMs && fakeTime - before < expectedMs + 100);
   assert(servoB.angles.empty());
   assert(Serial.outgoing.back() == "DONE:test-a");
@@ -61,4 +61,25 @@ int main() {
     if (line == "DONE:overlap") acknowledged = true;
   }
   assert(acknowledged);
+
+  // The PC releases the coin wait with NONE, then sends RUN after the video ends.
+  Serial.incoming = {"NONE:4"};
+  auto aCount = servoA.angles.size();
+  auto bCount = servoB.angles.size();
+  handleCoinInserted();
+  assert(servoA.angles.size() == aCount && servoB.angles.size() == bCount);
+  Serial.incoming = {"RUN:after-video:A:850"};
+  before = fakeTime;
+  loop();
+  expectedMs = SERVO_A_CONTINUOUS ? 850 : 1000;
+  assert(fakeTime - before >= expectedMs && fakeTime - before < expectedMs + 100);
+  assert(servoA.angles.size() == aCount + 2 && servoA.angles.back() == stopA);
+  assert(Serial.outgoing.back() == "DONE:after-video");
+
+  for (const auto &bad : {"0", "2001", "-100", "770xyz", "", "99999999"}) {
+    Serial.incoming = {String("RUN:invalid:A:") + bad};
+    loop();
+    assert(Serial.outgoing.back() == "FAILED:invalid");
+    assert(servoA.angles.size() == aCount + 2);
+  }
 }

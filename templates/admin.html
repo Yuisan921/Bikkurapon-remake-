@@ -101,11 +101,21 @@
         </div>
         <span class="danger-chip">在庫が1個減ります</span>
       </div>
-      <p class="panel-description">本番と同じ抽選を行い、Arduino・ホッパー・画面演出をまとめて確認します。</p>
+      <p class="panel-description">抽選演出（動画がある場合は動画）が終わってから、ホッパーが動きます。ゲーム画面を開いてテストしてください。</p>
       <button id="hardware-test-button" class="hardware-test-button" type="button" disabled>
         <span class="hardware-test-icon" aria-hidden="true">USB</span>
         <span><b>実機を1回動かす</b><small id="hardware-test-detail">Arduinoの接続を待っています</small></span>
       </button>
+      <form id="servo-timing-form" class="servo-timing-form">
+        <h3>半回転（約180度）の調整</h3>
+        <p class="panel-description">0.3秒で約70度の実測から、初期値は770ミリ秒です。回りすぎるときは短く、足りないときは長くします。</p>
+        <div class="servo-timing-inputs">
+          <label>当たり側（D9）<input id="servo-time-a" type="number" min="50" max="2000" step="1" value="770" required> ミリ秒</label>
+          <label>はずれ側（D10）<input id="servo-time-b" type="number" min="50" max="2000" step="1" value="770" required> ミリ秒</label>
+          <button class="button secondary" type="submit">回転時間を保存</button>
+        </div>
+        <p class="panel-description">連続回転サーボは角度を測れないため、負荷や電源によって回転量が変わります。実際の位置を見て調整してください。</p>
+      </form>
     </section>
 
     <section class="panel inventory-panel">

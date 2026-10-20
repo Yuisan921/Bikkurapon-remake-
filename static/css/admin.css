@@ -274,6 +274,11 @@ button { color: inherit; }
 .hardware-test-button small { margin-top: 3px; color: var(--muted); font-size: .7rem; }
 .hardware-test-icon { display: grid; place-items: center; flex: 0 0 auto; width: 48px; aspect-ratio: 1; border-radius: 14px; color: #fff; font-size: .7rem; font-weight: 1000; background: var(--teal); }
 .hardware-test-button:disabled .hardware-test-icon { background: #99a5a3; }
+.servo-timing-form { margin-top: 24px; padding-top: 18px; border-top: 1px solid var(--line); }
+.servo-timing-form h3 { margin: 0 0 8px; font-size: 1rem; }
+.servo-timing-inputs { display: flex; flex-wrap: wrap; gap: 16px; align-items: center; margin: 16px 0; }
+.servo-timing-inputs label { font-size: .82rem; }
+.servo-timing-inputs input { width: 85px; padding: 9px; margin-left: 8px; border: 1px solid var(--line); border-radius: 8px; }
 
 .auto-probability-control { display: flex; align-items: center; gap: 14px; margin-top: 18px; padding: 14px 16px; border: 1px solid #b9ddda; border-radius: 14px; background: #edf8f6; cursor: pointer; }
 .auto-probability-control b, .auto-probability-control small { display: block; }
