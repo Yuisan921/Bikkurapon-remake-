@@ -9,7 +9,7 @@
 ; LocalAppData\Programs にインストールする。
 
 #define MyAppName "妖怪まつり びっくらぽん"
-#define MyAppVersion "2.4.1"
+#define MyAppVersion "2.5.0"
 #define MyAppExeName "bikkurapon.exe"
 
 [Setup]
@@ -36,6 +36,8 @@ Name: "desktopicon"; Description: "デスクトップにアイコンを作成す
 [Files]
 Source: "..\dist\{#MyAppExeName}"; DestDir: "{app}"; Flags: ignoreversion
 Source: "..\videos\README.md"; DestDir: "{app}\videos"; Flags: onlyifdoesntexist
+Source: "..\videos\atari\*"; DestDir: "{app}\videos\atari"; Flags: onlyifdoesntexist
+Source: "..\videos\hazure\*"; DestDir: "{app}\videos\hazure"; Flags: onlyifdoesntexist
 
 [Icons]
 Name: "{group}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"

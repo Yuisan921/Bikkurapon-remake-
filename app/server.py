@@ -12,12 +12,17 @@ Unoを接続しない場合でも、管理画面から在庫を減らさない�
 import json
 import hmac
 import logging
+import os
+import random
 import socket
+import subprocess
+import sys
 import threading
 import time
 import urllib.error
 import urllib.request
 from logging.handlers import RotatingFileHandler
+from urllib.parse import quote
 
 from flask import Flask, abort, jsonify, make_response, render_template, request, send_from_directory
 from flask_socketio import SocketIO
@@ -37,6 +42,10 @@ DATA_DIR = BASE_DIR / "data"
 VIDEO_DIR = BASE_DIR / "videos"
 DATA_DIR.mkdir(parents=True, exist_ok=True)
 VIDEO_DIR.mkdir(parents=True, exist_ok=True)
+for video_group in ("atari", "hazure"):
+    (VIDEO_DIR / video_group).mkdir(parents=True, exist_ok=True)
+
+VIDEO_EXTENSIONS = {".mp4", ".webm"}
 
 # GUI版ではコンソールを表示しないため、起動失敗も確認できるログを保存する。
 # 1ファイル1MB・3世代に制限し、文化祭のPCで容量が増え続けないようにする。
@@ -91,10 +100,52 @@ def save_settings():
         _write_json_atomic(CONFIG_DIR / "settings.json", settings)
 
 
+def video_group_for_result(result):
+    if result.get("id") in {"atari", "hazure"}:
+        return result["id"]
+    return "atari" if str(result.get("hopper", "")).lower() == "a" else "hazure"
+
+
+def video_candidates(group):
+    folder = VIDEO_DIR / group
+    try:
+        return sorted(
+            (
+                path for path in folder.iterdir()
+                if path.is_file() and path.suffix.lower() in VIDEO_EXTENSIONS
+            ),
+            key=lambda path: path.name.lower(),
+        )
+    except OSError:
+        logger.exception("動画フォルダーを読み込めませんでした: %s", folder)
+        return []
+
+
+def select_result_video(result):
+    """結果別フォルダーから、今回再生する動画を1本ランダムに選ぶ。"""
+    candidates = video_candidates(video_group_for_result(result))
+    if not candidates:
+        # 旧方式の videos/atari.mp4・hazure.mp4 と独自設定をそのまま使える。
+        return dict(result)
+    selected = random.choice(candidates)
+    relative_url = quote(selected.relative_to(VIDEO_DIR).as_posix())
+    return {**result, "video": f"/media/{relative_url}"}
+
+
+def video_library_status():
+    return {
+        "path": str(VIDEO_DIR),
+        "atari": len(video_candidates("atari")),
+        "hazure": len(video_candidates("hazure")),
+    }
+
+
 def _broadcast_result(result):
+    result = select_result_video(result)
     logger.info("抽選結果: %s (残り %s)", result["name"], result["remaining"])
     socketio.emit("draw_result", result)
     socketio.emit("stock_updated", lottery.get_status())
+    return result
 
 
 def run_draw_and_broadcast():
@@ -135,7 +186,7 @@ def prepare_hardware_draw():
         result = lottery.commit_draw(plan["reservation_id"])
         _broadcast_result(result)
         return {**result, "reservation_id": None}
-    return plan
+    return select_result_video(plan)
 
 
 last_admin_error = None
@@ -310,6 +361,7 @@ _ADMIN_PATHS = {
     "/api/clear_admin_error",
     "/api/animation_finished",
     "/api/set_servo_timing",
+    "/api/open_video_folder",
     "/api/restock",
     "/api/set_stock",
     "/api/set_probability",
@@ -330,7 +382,8 @@ def _valid_device_token():
 
 @app.before_request
 def restrict_remote_access():
-    if request.path == "/api/animation_finished" and request.remote_addr not in _LOOPBACK_ADDRESSES:
+    local_only_paths = {"/api/animation_finished", "/api/open_video_folder"}
+    if request.path in local_only_paths and request.remote_addr not in _LOOPBACK_ADDRESSES:
         abort(403)
     if request.remote_addr in _LOOPBACK_ADDRESSES:
         return None
@@ -398,6 +451,7 @@ def api_system_status():
         "auto_probability_by_stock": lottery.auto_probability_by_stock,
         "last_error": get_last_admin_error(),
         "servo_run_ms": servo_run_times(),
+        "video_library": video_library_status(),
     })
 
 
@@ -420,8 +474,9 @@ def api_preview_result():
     prize = next((item for item in lottery.get_status() if item["id"] == prize_id), None)
     if prize is None:
         return jsonify({"error": "unknown prize"}), 404
+    result = select_result_video({**prize, "preview": True})
     socketio.emit("draw_started", {"preview": True})
-    socketio.emit("draw_result", {**prize, "preview": True})
+    socketio.emit("draw_result", result)
     return jsonify({"ok": True})
 
 
@@ -434,9 +489,26 @@ def api_demo_draw():
         result = lottery.preview_draw()
     except OutOfStock:
         return jsonify({"error": "no_prizes"}), 409
+    result = select_result_video(result)
     socketio.emit("draw_started", {"preview": True})
     socketio.emit("draw_result", result)
     return jsonify(result)
+
+
+@app.route("/api/open_video_folder", methods=["POST"])
+def api_open_video_folder():
+    """管理画面から動画フォルダーをエクスプローラーで開く。"""
+    try:
+        if sys.platform == "win32":
+            getattr(os, "startfile")(str(VIDEO_DIR))
+        elif sys.platform == "darwin":
+            subprocess.Popen(["open", str(VIDEO_DIR)])
+        else:
+            subprocess.Popen(["xdg-open", str(VIDEO_DIR)])
+    except (OSError, AttributeError) as exc:
+        logger.exception("動画フォルダーを開けませんでした")
+        return jsonify({"error": f"動画フォルダーを開けませんでした: {exc}"}), 500
+    return jsonify({"ok": True, "path": str(VIDEO_DIR)})
 
 
 def physical_draw_busy():

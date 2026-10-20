@@ -29,7 +29,21 @@ const autoProbabilityToggle = document.getElementById("auto-probability-toggle")
 const servoTimingForm = document.getElementById("servo-timing-form");
 const servoTimeA = document.getElementById("servo-time-a");
 const servoTimeB = document.getElementById("servo-time-b");
+const openVideoFolderButton = document.getElementById("open-video-folder-button");
+const videoLibraryStatus = document.getElementById("video-library-status");
 let servoTimingLoaded = false;
+
+openVideoFolderButton.addEventListener("click", async () => {
+  openVideoFolderButton.disabled = true;
+  try {
+    await requestJson("/api/open_video_folder", { method: "POST" });
+    notify("動画フォルダーを開きました");
+  } catch (error) {
+    notify(error.message, true);
+  } finally {
+    openVideoFolderButton.disabled = false;
+  }
+});
 
 servoTimingForm.addEventListener("submit", async (event) => {
   event.preventDefault();
@@ -347,6 +361,10 @@ async function loadSystemStatus() {
       servoTimeA.value = data.servo_run_ms.a;
       servoTimeB.value = data.servo_run_ms.b;
       servoTimingLoaded = true;
+    }
+    if (data.video_library) {
+      videoLibraryStatus.textContent =
+        `当たり ${data.video_library.atari}本・はずれ ${data.video_library.hazure}本`;
     }
     renderAdminError(data.last_error);
     const hardware = data.hardware;
