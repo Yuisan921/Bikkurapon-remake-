@@ -87,6 +87,7 @@ class SerialBridge:
         self._stop_event = threading.Event()
         self._test_requested = threading.Event()
         self._draw_in_progress = threading.Event()
+        self._sensor_status = None
         self._thread = None
 
     def get_status(self):
@@ -96,6 +97,7 @@ class SerialBridge:
             "connected": self._serial is not None,
             "port": self.port,
             "busy": self._draw_in_progress.is_set() or self._test_requested.is_set(),
+            "sensor": dict(self._sensor_status) if self._sensor_status else None,
         }
 
     def start(self):
@@ -156,6 +158,20 @@ class SerialBridge:
                     self._handle_coin(coin_id)
                 finally:
                     self._draw_in_progress.clear()
+            elif line.startswith("SENSOR:CDS:"):
+                try:
+                    baseline = int(line.rsplit(":", 1)[1])
+                except ValueError:
+                    logger.warning("CdS基準値を読み取れませんでした: %s", line)
+                else:
+                    self._sensor_status = {
+                        "type": "cds",
+                        "baseline": baseline,
+                        "ok": baseline >= 150,
+                    }
+                    logger.info("CdSコインセンサーを認識しました(明るさ=%s)", baseline)
+            elif line == "SENSOR:DIGITAL":
+                self._sensor_status = {"type": "digital", "ok": True}
             else:
                 logger.debug("未知のシリアルメッセージ: %s", line)
 
@@ -282,6 +298,7 @@ class SerialBridge:
             except (serial.SerialException, OSError):
                 pass
         self._serial = None
+        self._sensor_status = None
 
         while not self._stop_event.is_set():
             try:

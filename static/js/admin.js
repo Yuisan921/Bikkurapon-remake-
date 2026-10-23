@@ -369,12 +369,23 @@ async function loadSystemStatus() {
     renderAdminError(data.last_error);
     const hardware = data.hardware;
     if (hardware.connected) {
-      hardwareTitle.textContent = "接続済み";
-      hardwareDetail.textContent = hardware.port ? `${hardware.port} を自動認識` : "USBで通信中";
-      setCardState(hardwareCard, "good");
+      const sensor = hardware.sensor;
+      const portLabel = hardware.port || "USB";
+      if (sensor?.type === "cds") {
+        hardwareTitle.textContent = sensor.ok ? "接続済み" : "接続済み（CdSが暗い）";
+        hardwareDetail.textContent = `${portLabel}・CdS明るさ ${sensor.baseline}`;
+        setCardState(hardwareCard, sensor.ok ? "good" : "warning");
+      } else {
+        hardwareTitle.textContent = "接続済み";
+        hardwareDetail.textContent = hardware.port ? `${hardware.port} を自動認識` : "USBで通信中";
+        setCardState(hardwareCard, "good");
+      }
       hardwareHelp.hidden = true;
-      headerStatus.className = "header-status is-good";
-      headerStatus.querySelector("b").textContent = data.ready ? "本番OK" : "在庫を確認";
+      const sensorReady = sensor?.ok !== false;
+      headerStatus.className = `header-status is-${sensorReady ? "good" : "warning"}`;
+      headerStatus.querySelector("b").textContent = sensorReady
+        ? (data.ready ? "本番OK" : "在庫を確認")
+        : "CdSを確認";
       hardwareTestButton.disabled = Boolean(hardware.busy);
       hardwareTestDetail.textContent = hardware.busy
         ? "抽選・排出を確認中です"

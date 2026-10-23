@@ -120,9 +120,9 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          $tag = "v2.5.0"
+          $tag = "v2.6.0"
           $asset = "dist_installer\BikkurapoSetup.exe"
-          $firmware = "dist_installer\ArduinoUno-v2.5.0.zip"
+          $firmware = "dist_installer\ArduinoUno-v2.6.0.zip"
           Compress-Archive -Path "firmware\arduino_uno_usb_serial" -DestinationPath $firmware
           gh release view $tag *> $null
           if ($LASTEXITCODE -eq 0) {
@@ -130,8 +130,8 @@ jobs:
           } else {
             gh release create $tag $asset $firmware `
               --target "$env:GITHUB_SHA" `
-              --title "妖怪まつり びっくらぽん v2.5.0" `
-              --notes "atari・hazureフォルダー内の動画を抽選ごとにランダム再生できるようになりました。管理画面から動画フォルダーを開けます。"
+              --title "妖怪まつり びっくらぽん v2.6.0" `
+              --notes "コイン検知をLED＋CdS方式へ変更しました。D4のLEDとA0のCdS分圧を使い、起動時の明るさを自動調整します。ArduinoUno-v2.6.0.zipを書き込んでください。"
           }
 
   firmware:
@@ -142,21 +142,23 @@ jobs:
       - name: Test actual Uno sketch with simulated serial and servos
         run: |
           set -e
-          for servo_a in true false; do
-            for servo_b in true false; do
-              g++ -std=c++17 -DSERVO_A_CONTINUOUS=$servo_a -DSERVO_B_CONTINUOUS=$servo_b -I tests/firmware tests/firmware/uno_protocol.cpp -o /tmp/uno-protocol-test
-              /tmp/uno-protocol-test
+          for sensor in true false; do
+            for servo_a in true false; do
+              for servo_b in true false; do
+                g++ -std=c++17 -DCOIN_SENSOR_USE_CDS=$sensor -DSERVO_A_CONTINUOUS=$servo_a -DSERVO_B_CONTINUOUS=$servo_b -I tests/firmware tests/firmware/uno_protocol.cpp -o /tmp/uno-protocol-test
+                /tmp/uno-protocol-test
+              done
             done
           done
       - name: Package Uno sketch and upload instructions
         working-directory: firmware
-        run: zip -r ../ArduinoUno-v2.5.0.zip arduino_uno_usb_serial
+        run: zip -r ../ArduinoUno-v2.6.0.zip arduino_uno_usb_serial
       - uses: actions/upload-artifact@v4
         with:
-          name: ArduinoUno-v2.5.0
-          path: ArduinoUno-v2.5.0.zip
+          name: ArduinoUno-v2.6.0
+          path: ArduinoUno-v2.6.0.zip
       - name: Publish firmware alongside compatible PC app
         if: ${{ inputs.publish_release }}
         env:
           GH_TOKEN: ${{ github.token }}
-        run: gh release upload v2.5.0 ArduinoUno-v2.5.0.zip
+        run: gh release upload v2.6.0 ArduinoUno-v2.6.0.zip

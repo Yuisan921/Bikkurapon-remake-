@@ -26,13 +26,17 @@ class String : public std::string {
   }
 };
 
-constexpr int LOW = 0, HIGH = 1, INPUT_PULLUP = 2;
+constexpr int LOW = 0, HIGH = 1, INPUT_PULLUP = 2, OUTPUT = 3, A0 = 14;
 inline unsigned long fakeTime = 1000;
 inline int sensorLevel = HIGH;
+inline int sensorAnalogValue = 800;
+inline int ledPinLevel = LOW;
 inline unsigned long millis() { return fakeTime++; }
 inline void delay(unsigned long ms) { fakeTime += ms; }
 inline void pinMode(int, int) {}
 inline int digitalRead(int) { return sensorLevel; }
+inline int analogRead(int) { return sensorAnalogValue; }
+inline void digitalWrite(int, int level) { ledPinLevel = level; }
 
 class Servo {
  public:
@@ -58,6 +62,8 @@ inline FakeSerial Serial;
 
 // Arduino's build preprocessor normally generates these declarations.
 void handleCoinInserted();
+void calibrateCoinLight();
+bool isCoinDetected();
 String waitForResponse(const String &, unsigned long);
 bool isTestCommand(const String &);
 void dispenseIfWon(const String &);

@@ -181,6 +181,28 @@ def test_status_changes_when_bridge_stops():
     assert bridge.get_status()["connected"] is False
 
 
+def test_reports_cds_brightness_from_uno():
+    bridge = SerialBridge("COM3", 115200, lambda: None)
+    bridge._serial = FakeSerial([b"SENSOR:CDS:812\n"], bridge._stop_event)
+
+    bridge._run()
+
+    assert bridge.get_status()["sensor"] == {
+        "type": "cds",
+        "baseline": 812,
+        "ok": True,
+    }
+
+
+def test_warns_when_cds_is_too_dark():
+    bridge = SerialBridge("COM3", 115200, lambda: None)
+    bridge._serial = FakeSerial([b"SENSOR:CDS:90\n"], bridge._stop_event)
+
+    bridge._run()
+
+    assert bridge.get_status()["sensor"]["ok"] is False
+
+
 def test_hardware_test_uses_same_dispense_flow_as_coin():
     results = []
     bridge = SerialBridge(

@@ -1,10 +1,23 @@
 #include <Servo.h>
 
-// 赤外線センサーのデジタル出力(OUT)をD2へ接続します。
-// 一般的な障害物センサーモジュールは遮られたときLOWになります。
-// お使いのセンサーが逆の場合は LOW を HIGH に変えてください。
+// コイン通路を挟んでLEDとCdSを向かい合わせ、コインが光を遮る変化を検知する。
+// LED: D4 -- 220〜330Ω -- LED -- GND
+// CdS分圧: 5V -- CdS -- A0 -- 10kΩ -- GND
+#ifndef COIN_SENSOR_USE_CDS
+#define COIN_SENSOR_USE_CDS true
+#endif
+const int COIN_LED_PIN = 4;
+const int COIN_CDS_PIN = A0;
+
+// 以前のデジタル赤外線センサーへ戻す場合だけCOIN_SENSOR_USE_CDSをfalseにする。
 const int COIN_SENSOR_PIN = 2;
 const int COIN_DETECTED_LEVEL = LOW;
+
+// 起動時の「LEDが直接当たっている明るさ」から何%以上暗くなればコインとみなすか。
+// 誤反応するときは割合を上げ、反応しにくいときは下げる。
+const int CDS_BLOCK_DROP_PERCENT = 25;
+const int CDS_BLOCK_MIN_DROP = 80;  // 0〜1023の読み値で最低限必要な差
+const int CDS_MIN_LIT_VALUE = 150;  // これ未満ならLED・CdS・抵抗の配線を確認
 
 const int SERVO_A_PIN = 9;   // 当たり
 const int SERVO_B_PIN = 10;  // はずれ
@@ -35,6 +48,7 @@ const int SERVO_B_DISPENSE_ANGLE = 90;
 
 const unsigned long SERVO_HOLD_MS = 1000;
 const unsigned long DEBOUNCE_MS = 300;
+const unsigned long SENSOR_BLOCK_CONFIRM_MS = 20;
 const unsigned long SENSOR_CLEAR_MS = 150;
 const unsigned long RESPONSE_TIMEOUT_MS = 3000;
 
@@ -43,13 +57,22 @@ Servo servoB;
 
 unsigned long lastTriggerMs = 0;
 unsigned long coinSequence = 0;
+unsigned long sensorBlockedSinceMs = 0;
 unsigned long sensorClearSinceMs = 0;
 bool coinArmed = true;
+int coinLightBaseline = 0;
 
 void setup() {
   Serial.begin(115200);
 
-  pinMode(COIN_SENSOR_PIN, INPUT_PULLUP);
+  if (COIN_SENSOR_USE_CDS) {
+    pinMode(COIN_LED_PIN, OUTPUT);
+    digitalWrite(COIN_LED_PIN, HIGH);
+    calibrateCoinLight();
+  } else {
+    pinMode(COIN_SENSOR_PIN, INPUT_PULLUP);
+    Serial.println("SENSOR:DIGITAL");
+  }
 
   // 最初の信号から停止値になるよう、attachより先に値を設定する。
   stopServo(servoA, SERVO_A_CONTINUOUS, SERVO_A_REST_ANGLE, SERVO_A_STOP_US);
@@ -71,31 +94,73 @@ void loop() {
     }
   }
 
-  bool coinDetected = digitalRead(COIN_SENSOR_PIN) == COIN_DETECTED_LEVEL;
+  bool coinDetected = isCoinDetected();
   unsigned long now = millis();
 
   if (coinDetected) {
     sensorClearSinceMs = 0;
-    if (now - lastTriggerMs > DEBOUNCE_MS) {
-      if (coinArmed) {
+    if (sensorBlockedSinceMs == 0) {
+      sensorBlockedSinceMs = now;
+    }
+    if (now - sensorBlockedSinceMs >= SENSOR_BLOCK_CONFIRM_MS) {
+      if (coinArmed && now - lastTriggerMs > DEBOUNCE_MS) {
         lastTriggerMs = now;
         coinArmed = false;
         handleCoinInserted();
       }
     }
   }
-  else if (!coinArmed) {
-    // 光が一瞬戻っただけで再受付すると、1枚のコインを複数回数えることが
-    // あるため、センサーが一定時間空いたことを確認してから次を受け付けます。
-    if (sensorClearSinceMs == 0) {
-      sensorClearSinceMs = now;
-    }
-    else if (now - sensorClearSinceMs >= SENSOR_CLEAR_MS) {
-      coinArmed = true;
+  else {
+    sensorBlockedSinceMs = 0;
+    if (!coinArmed) {
+      // 光が一瞬戻っただけで再受付すると、1枚のコインを複数回数えることが
+      // あるため、センサーが一定時間空いたことを確認してから次を受け付けます。
+      if (sensorClearSinceMs == 0) {
+        sensorClearSinceMs = now;
+      }
+      else if (now - sensorClearSinceMs >= SENSOR_CLEAR_MS) {
+        coinArmed = true;
+      }
     }
   }
 
   delay(20);
+}
+
+void calibrateCoinLight() {
+  // LEDとCdSの値が安定してから、コインが無い状態の平均を基準にする。
+  delay(300);
+  long total = 0;
+  const int samples = 32;
+  for (int i = 0; i < samples; ++i) {
+    total += analogRead(COIN_CDS_PIN);
+    delay(8);
+  }
+  coinLightBaseline = total / samples;
+  Serial.println("SENSOR:CDS:" + String((unsigned long)coinLightBaseline));
+  if (coinLightBaseline < CDS_MIN_LIT_VALUE) {
+    Serial.println("[WARN] CdSが暗すぎます。LED・A0・10kΩ抵抗を確認してください");
+  }
+}
+
+bool isCoinDetected() {
+  if (!COIN_SENSOR_USE_CDS) {
+    return digitalRead(COIN_SENSOR_PIN) == COIN_DETECTED_LEVEL;
+  }
+
+  int reading = analogRead(COIN_CDS_PIN);
+  int fullDrop = coinLightBaseline * CDS_BLOCK_DROP_PERCENT / 100;
+  if (fullDrop < CDS_BLOCK_MIN_DROP) fullDrop = CDS_BLOCK_MIN_DROP;
+
+  // 検知後は半分の差まで戻るまで遮光中とするヒステリシスで、境界のちらつきを防ぐ。
+  int requiredDrop = coinArmed ? fullDrop : fullDrop / 2;
+  bool blocked = coinLightBaseline - reading >= requiredDrop;
+
+  // コインが無い間だけゆっくり基準値を追従させ、LEDや周囲光の変動を吸収する。
+  if (coinArmed && !blocked) {
+    coinLightBaseline = (coinLightBaseline * 31L + reading) / 32L;
+  }
+  return blocked;
 }
 
 void handleCoinInserted() {

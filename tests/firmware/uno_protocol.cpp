@@ -3,6 +3,21 @@
 
 int main() {
   setup();
+  if (COIN_SENSOR_USE_CDS) {
+    assert(ledPinLevel == HIGH);
+    assert(coinLightBaseline == 800);
+    sensorAnalogValue = 700;
+    assert(!isCoinDetected());
+    sensorAnalogValue = 500;
+    assert(isCoinDetected());
+    sensorAnalogValue = 800;
+  } else {
+    sensorLevel = HIGH;
+    assert(!isCoinDetected());
+    sensorLevel = LOW;
+    assert(isCoinDetected());
+    sensorLevel = HIGH;
+  }
   const int stopA = SERVO_A_CONTINUOUS ? 1500 : 0;
   const int stopB = SERVO_B_CONTINUOUS ? 1500 : 0;
   const int runA = SERVO_A_CONTINUOUS ? 1600 : 90;
