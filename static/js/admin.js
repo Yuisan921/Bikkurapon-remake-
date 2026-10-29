@@ -31,7 +31,112 @@ const servoTimeA = document.getElementById("servo-time-a");
 const servoTimeB = document.getElementById("servo-time-b");
 const openVideoFolderButton = document.getElementById("open-video-folder-button");
 const videoLibraryStatus = document.getElementById("video-library-status");
+const manualServoButtons = Array.from(document.querySelectorAll(".manual-servo-button"));
+const refreshLogButton = document.getElementById("refresh-log-button");
+const copyLogButton = document.getElementById("copy-log-button");
+const openLogFolderButton = document.getElementById("open-log-folder-button");
+const logOutput = document.getElementById("log-output");
 let servoTimingLoaded = false;
+let manualSession = null;
+let manualKeepalive = null;
+
+async function sendManualServo(hopper, action) {
+  return requestJson("/api/manual_servo", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ hopper, action }),
+    keepalive: action === "stop",
+  });
+}
+
+async function stopManualServo() {
+  const session = manualSession;
+  if (!session) return;
+  session.stopped = true;
+  manualSession = null;
+  window.clearInterval(manualKeepalive);
+  manualKeepalive = null;
+  session.button.classList.remove("is-running");
+  try {
+    await sendManualServo(session.hopper, "stop");
+  } catch (error) {
+    notify(`サーボの停止確認に失敗しました：${error.message}`, true);
+  } finally {
+    loadSystemStatus();
+  }
+}
+
+async function startManualServo(event) {
+  const button = event.currentTarget;
+  if (button.disabled || manualSession) return;
+  event.preventDefault();
+  const session = {
+    button,
+    hopper: button.dataset.hopper,
+    stopped: false,
+  };
+  manualSession = session;
+  button.classList.add("is-running");
+  try {
+    await sendManualServo(session.hopper, "start");
+    if (session.stopped || manualSession !== session) {
+      await sendManualServo(session.hopper, "stop").catch(() => {});
+      return;
+    }
+    manualKeepalive = window.setInterval(() => {
+      sendManualServo(session.hopper, "start").catch((error) => {
+        notify(`手動操作が途切れました：${error.message}`, true);
+        stopManualServo();
+      });
+    }, 700);
+  } catch (error) {
+    manualSession = null;
+    button.classList.remove("is-running");
+    notify(error.message, true);
+  }
+}
+
+manualServoButtons.forEach((button) => {
+  button.addEventListener("pointerdown", startManualServo);
+  button.addEventListener("contextmenu", (event) => event.preventDefault());
+});
+window.addEventListener("pointerup", stopManualServo);
+window.addEventListener("pointercancel", stopManualServo);
+window.addEventListener("blur", stopManualServo);
+document.addEventListener("visibilitychange", () => {
+  if (document.hidden) stopManualServo();
+});
+
+async function loadLogs() {
+  refreshLogButton.disabled = true;
+  try {
+    const data = await requestJson("/api/logs?limit=250");
+    logOutput.textContent = data.text || "まだログはありません。";
+    logOutput.scrollTop = logOutput.scrollHeight;
+  } catch (error) {
+    logOutput.textContent = `ログを読み込めませんでした：${error.message}`;
+  } finally {
+    refreshLogButton.disabled = false;
+  }
+}
+
+refreshLogButton.addEventListener("click", loadLogs);
+copyLogButton.addEventListener("click", async () => {
+  try {
+    await navigator.clipboard.writeText(logOutput.textContent);
+    notify("ログをコピーしました");
+  } catch (_error) {
+    notify("ログをコピーできませんでした", true);
+  }
+});
+openLogFolderButton.addEventListener("click", async () => {
+  try {
+    await requestJson("/api/open_log_folder", { method: "POST" });
+    notify("ログフォルダーを開きました");
+  } catch (error) {
+    notify(error.message, true);
+  }
+});
 
 openVideoFolderButton.addEventListener("click", async () => {
   openVideoFolderButton.disabled = true;
@@ -390,6 +495,11 @@ async function loadSystemStatus() {
       hardwareTestDetail.textContent = hardware.busy
         ? "抽選・排出を確認中です"
         : "本番と同じ抽選・排出・在庫更新を確認";
+      manualServoButtons.forEach((button) => {
+        const isThisManualServo = hardware.manual_hopper === button.dataset.hopper;
+        button.disabled = Boolean(hardware.busy && !isThisManualServo);
+        button.classList.toggle("is-running", isThisManualServo);
+      });
     } else {
       hardwareTitle.textContent = hardware.enabled ? "未接続" : "USB連携オフ";
       hardwareDetail.textContent = hardware.enabled ? "USBケーブルを確認" : "設定で無効になっています";
@@ -399,6 +509,10 @@ async function loadSystemStatus() {
       headerStatus.querySelector("b").textContent = "要確認";
       hardwareTestButton.disabled = true;
       hardwareTestDetail.textContent = "Arduinoの接続を待っています";
+      manualServoButtons.forEach((button) => {
+        button.disabled = true;
+        button.classList.remove("is-running");
+      });
     }
     if (autoProbabilityByStock !== Boolean(data.auto_probability_by_stock)) {
       autoProbabilityByStock = Boolean(data.auto_probability_by_stock);
@@ -411,6 +525,7 @@ async function loadSystemStatus() {
     hardwareTitle.textContent = "状態を取得できません";
     setCardState(hardwareCard, "danger");
     hardwareTestButton.disabled = true;
+    manualServoButtons.forEach((button) => { button.disabled = true; });
   }
 }
 
@@ -453,4 +568,5 @@ socket.on("disconnect", () => {
 
 loadPrizes();
 loadSystemStatus();
+loadLogs();
 window.setInterval(loadSystemStatus, 2000);

@@ -107,4 +107,37 @@ int main() {
     assert(Serial.outgoing.back() == "FAILED:invalid");
     assert(servoA.angles.size() == aCount + 2);
   }
+
+  // Holding an admin button starts one servo; release stops both.
+  auto manualACount = servoA.angles.size();
+  auto manualBCount = servoB.angles.size();
+  Serial.incoming = {"MANUAL:A:START"};
+  loop();
+  assert(manualServoActive && manualServoHopper == "A");
+  assert(servoA.angles.size() == manualACount + 2);
+  assert(servoA.angles.back() == runA);
+  assert(servoB.angles.size() == manualBCount + 1);
+  assert(Serial.outgoing.back() == "MANUAL:STARTED:A");
+
+  // Keepalive refreshes the timeout without restarting or twitching the servo.
+  manualACount = servoA.angles.size();
+  Serial.incoming = {"MANUAL:A:START"};
+  loop();
+  assert(servoA.angles.size() == manualACount);
+
+  Serial.incoming = {"MANUAL:A:STOP"};
+  loop();
+  assert(!manualServoActive);
+  assert(servoA.angles.back() == stopA && servoB.angles.back() == stopB);
+  assert(Serial.outgoing.back() == "MANUAL:STOPPED:A");
+
+  // Lost browser/USB control can never leave a continuous servo running.
+  Serial.incoming = {"MANUAL:B:START"};
+  loop();
+  assert(manualServoActive && servoB.angles.back() == runB);
+  fakeTime += MANUAL_SERVO_TIMEOUT_MS + 1;
+  loop();
+  assert(!manualServoActive);
+  assert(servoA.angles.back() == stopA && servoB.angles.back() == stopB);
+  assert(Serial.outgoing.back() == "MANUAL:TIMEOUT");
 }

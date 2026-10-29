@@ -88,16 +88,27 @@ class SerialBridge:
         self._test_requested = threading.Event()
         self._draw_in_progress = threading.Event()
         self._sensor_status = None
+        self._write_lock = threading.Lock()
+        self._manual_lock = threading.Lock()
+        self._manual_hopper = None
+        self._manual_deadline = 0.0
         self._thread = None
 
     def get_status(self):
         """管理画面に表示するUSB接続状態を返す。"""
+        with self._manual_lock:
+            manual_hopper = self._manual_hopper
         return {
             "enabled": True,
             "connected": self._serial is not None,
             "port": self.port,
-            "busy": self._draw_in_progress.is_set() or self._test_requested.is_set(),
+            "busy": (
+                self._draw_in_progress.is_set()
+                or self._test_requested.is_set()
+                or manual_hopper is not None
+            ),
             "sensor": dict(self._sensor_status) if self._sensor_status else None,
+            "manual_hopper": manual_hopper.lower() if manual_hopper else None,
         }
 
     def start(self):
@@ -130,6 +141,7 @@ class SerialBridge:
                 if not self._reconnect():
                     break
                 continue
+            self._stop_expired_manual_control()
             if self._test_requested.is_set():
                 self._draw_in_progress.set()
                 self._test_requested.clear()
@@ -179,10 +191,54 @@ class SerialBridge:
         """管理画面から、本物のコイン投入と同じ排出処理を1回予約する。"""
         if self._serial is None or self._stop_event.is_set():
             return False
-        if self._test_requested.is_set() or self._draw_in_progress.is_set():
+        with self._manual_lock:
+            manually_moving = self._manual_hopper is not None
+        if self._test_requested.is_set() or self._draw_in_progress.is_set() or manually_moving:
             return False
         self._test_requested.set()
         return True
+
+    def set_manual_servo(self, hopper, active):
+        """管理画面の長押し中だけサーボを回す。定期再送が止まれば自動停止する。"""
+        hopper = str(hopper).upper()
+        if hopper not in {"A", "B"}:
+            return False
+        with self._manual_lock:
+            if self._serial is None or self._stop_event.is_set():
+                self._manual_hopper = None
+                return False
+            if active:
+                if self._test_requested.is_set() or self._draw_in_progress.is_set():
+                    return False
+                if self._manual_hopper not in {None, hopper}:
+                    return False
+                if not self._write_response(f"MANUAL:{hopper}:START\n"):
+                    self._manual_hopper = None
+                    return False
+                starting = self._manual_hopper is None
+                self._manual_hopper = hopper
+                self._manual_deadline = time.monotonic() + 2.5
+                if starting:
+                    logger.info("手動位置調整を開始しました(ホッパー%s)", hopper)
+                return True
+
+            # 状態がずれていてもSTOPを送り、安全側へ倒す。
+            success = self._write_response(f"MANUAL:{hopper}:STOP\n")
+            if self._manual_hopper == hopper:
+                self._manual_hopper = None
+                self._manual_deadline = 0.0
+                logger.info("手動位置調整を停止しました(ホッパー%s)", hopper)
+            return success
+
+    def _stop_expired_manual_control(self):
+        with self._manual_lock:
+            if self._manual_hopper is None or time.monotonic() <= self._manual_deadline:
+                return
+            hopper = self._manual_hopper
+            self._write_response(f"MANUAL:{hopper}:STOP\n")
+            self._manual_hopper = None
+            self._manual_deadline = 0.0
+            logger.warning("手動位置調整の通信が途切れたため自動停止しました(ホッパー%s)", hopper)
 
     def _handle_coin(self, coin_id=None):
         logger.info("USB経由でコイン投入を検知しました。")
@@ -299,6 +355,9 @@ class SerialBridge:
                 pass
         self._serial = None
         self._sensor_status = None
+        with self._manual_lock:
+            self._manual_hopper = None
+            self._manual_deadline = 0.0
 
         while not self._stop_event.is_set():
             try:
@@ -325,14 +384,22 @@ class SerialBridge:
         return False
 
     def _write_response(self, message):
-        try:
-            self._serial.write(message.encode("utf-8"))
-            return True
-        except (serial.SerialException, OSError) as exc:
-            logger.warning("シリアル書き込みエラー: %s", exc)
-            return False
+        with self._write_lock:
+            if self._serial is None:
+                return False
+            try:
+                self._serial.write(message.encode("utf-8"))
+                return True
+            except (serial.SerialException, OSError) as exc:
+                logger.warning("シリアル書き込みエラー: %s", exc)
+                return False
 
     def stop(self):
+        with self._manual_lock:
+            if self._manual_hopper is not None:
+                self._write_response(f"MANUAL:{self._manual_hopper}:STOP\n")
+                self._manual_hopper = None
+                self._manual_deadline = 0.0
         self._stop_event.set()
         if self._serial is not None:
             try:

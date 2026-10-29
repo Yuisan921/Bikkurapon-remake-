@@ -202,6 +202,64 @@ def test_hardware_test_requests_real_dispense(server, monkeypatch):
     bridge.request_hardware_test.assert_called_once_with()
 
 
+def test_manual_servo_endpoint_starts_and_stops_without_stock_change(server, monkeypatch):
+    bridge = mock.Mock()
+    bridge.get_status.return_value = {"connected": True}
+    bridge.set_manual_servo.return_value = True
+    monkeypatch.setattr(server, "serial_bridge", bridge)
+    stock_before = server.lottery.stock_data_path.read_text(encoding="utf-8")
+    client = server.app.test_client()
+
+    assert client.post(
+        "/api/manual_servo", json={"hopper": "a", "action": "start"}
+    ).status_code == 200
+    assert client.post(
+        "/api/manual_servo", json={"hopper": "a", "action": "stop"}
+    ).status_code == 200
+
+    assert bridge.set_manual_servo.call_args_list == [
+        mock.call("a", True),
+        mock.call("a", False),
+    ]
+    assert server.lottery.stock_data_path.read_text(encoding="utf-8") == stock_before
+
+
+def test_manual_servo_endpoint_rejects_invalid_and_remote_requests(server, monkeypatch):
+    bridge = mock.Mock()
+    bridge.get_status.return_value = {"connected": True}
+    monkeypatch.setattr(server, "serial_bridge", bridge)
+    monkeypatch.setitem(server.settings, "allow_remote_admin", True)
+    client = server.app.test_client()
+
+    assert client.post(
+        "/api/manual_servo", json={"hopper": "x", "action": "start"}
+    ).status_code == 400
+    assert client.post(
+        "/api/manual_servo",
+        json={"hopper": "a", "action": "start"},
+        environ_overrides=REMOTE,
+    ).status_code == 403
+
+
+def test_admin_can_read_recent_logs_but_remote_cannot(server, tmp_path, monkeypatch):
+    log_file = tmp_path / "bikkurapon.log"
+    log_file.write_text(
+        "old line\nGET /api/logs?limit=250 self line\ncoin detected\nservo stopped\n",
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(server, "LOG_FILE", log_file)
+    monkeypatch.setitem(server.settings, "allow_remote_admin", True)
+    client = server.app.test_client()
+
+    response = client.get("/api/logs?limit=20")
+
+    assert response.status_code == 200
+    assert "coin detected" in response.get_json()["text"]
+    assert "servo stopped" in response.get_json()["text"]
+    assert "/api/logs" not in response.get_json()["text"]
+    assert client.get("/api/logs", environ_overrides=REMOTE).status_code == 403
+
+
 def test_auto_probability_toggle_updates_probabilities(server, monkeypatch):
     monkeypatch.setattr(server, "save_settings", mock.Mock())
 

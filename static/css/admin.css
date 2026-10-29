@@ -274,6 +274,15 @@ button { color: inherit; }
 .hardware-test-button small { margin-top: 3px; color: var(--muted); font-size: .7rem; }
 .hardware-test-icon { display: grid; place-items: center; flex: 0 0 auto; width: 48px; aspect-ratio: 1; border-radius: 14px; color: #fff; font-size: .7rem; font-weight: 1000; background: var(--teal); }
 .hardware-test-button:disabled .hardware-test-icon { background: #99a5a3; }
+.manual-servo-control { margin-top: 24px; padding-top: 18px; border-top: 1px solid var(--line); }
+.manual-servo-control h3 { margin: 0 0 8px; font-size: 1rem; }
+.manual-servo-buttons { display: grid; grid-template-columns: repeat(2, minmax(170px, 260px)); gap: 12px; margin-top: 15px; }
+.manual-servo-button { min-height: 72px; padding: 12px 18px; border: 2px solid #c69a39; border-radius: 14px; color: #694815; background: #fff7d9; cursor: pointer; touch-action: none; user-select: none; }
+.manual-servo-button b, .manual-servo-button small { display: block; pointer-events: none; }
+.manual-servo-button small { margin-top: 4px; color: var(--muted); }
+.manual-servo-button.is-running { color: #fff; border-color: var(--red); background: var(--red); box-shadow: 0 0 0 4px rgba(166, 47, 40, .15); }
+.manual-servo-button:disabled { opacity: .5; cursor: not-allowed; }
+.manual-safety-note { margin: 10px 0 0; color: var(--muted); font-size: .72rem; }
 .video-library { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 14px; margin-top: 22px; padding: 15px 16px; border: 1px solid var(--line); border-radius: 14px; background: #faf8f0; }
 .video-library b, .video-library small { display: block; }
 .video-library small { margin-top: 4px; color: var(--muted); }
@@ -326,6 +335,9 @@ button { color: inherit; }
 .start-guide strong { font-size: .81rem; }
 .start-guide small { margin-top: 2px; color: var(--muted); font-size: .66rem; line-height: 1.35; }
 
+.log-actions { display: flex; flex-wrap: wrap; gap: 10px; margin: 16px 0 12px; }
+.log-output { min-height: 220px; max-height: 430px; overflow: auto; margin: 0; padding: 16px; border: 1px solid #343a37; border-radius: 12px; color: #e7f2eb; background: #18201c; font: .72rem/1.55 Consolas, "Courier New", monospace; white-space: pre-wrap; word-break: break-word; }
+
 .toast {
   position: fixed;
   right: 24px;
@@ -357,4 +369,5 @@ button { color: inherit; }
   .window-actions { justify-content: flex-start; }
   .prize-list { grid-template-columns: 1fr; }
   .start-guide { grid-template-columns: 1fr; }
+  .manual-servo-buttons { grid-template-columns: 1fr; }
 }

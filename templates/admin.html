@@ -114,6 +114,19 @@
         <span class="hardware-test-icon" aria-hidden="true">USB</span>
         <span><b>実機を1回動かす</b><small id="hardware-test-detail">Arduinoの接続を待っています</small></span>
       </button>
+      <div class="manual-servo-control">
+        <h3>サーボの位置を手動調整</h3>
+        <p class="panel-description">ボタンを押している間だけ回ります。位置が合ったら指やマウスを離してください。</p>
+        <div class="manual-servo-buttons">
+          <button class="manual-servo-button" data-hopper="a" type="button" disabled>
+            <b>当たり側（D9）</b><small>長押しで回す</small>
+          </button>
+          <button class="manual-servo-button" data-hopper="b" type="button" disabled>
+            <b>はずれ側（D10）</b><small>長押しで回す</small>
+          </button>
+        </div>
+        <p class="manual-safety-note">通信が途切れた場合も約2秒で自動停止します。在庫は減りません。</p>
+      </div>
       <form id="servo-timing-form" class="servo-timing-form">
         <h3>半回転（約180度）の調整</h3>
         <p class="panel-description">0.3秒で約70度の実測から、初期値は770ミリ秒です。回りすぎるときは短く、足りないときは長くします。</p>
@@ -154,6 +167,22 @@
         <li><span>2</span><div><strong>在庫を合わせる</strong><small>ホッパーに入れたカプセル数を入力</small></div></li>
         <li><span>3</span><div><strong>コインを1枚通す</strong><small>センサー・画面・排出をまとめて確認</small></div></li>
       </ol>
+    </section>
+
+    <section class="panel log-panel">
+      <div class="panel-heading">
+        <div>
+          <p class="section-label">SYSTEM LOG</p>
+          <h2>動作ログ</h2>
+        </div>
+      </div>
+      <p class="panel-description">Arduino接続、コイン検知、抽選、サーボ操作、エラーの記録を確認できます。</p>
+      <div class="log-actions">
+        <button id="refresh-log-button" class="button secondary" type="button">最新に更新</button>
+        <button id="copy-log-button" class="button secondary" type="button">ログをコピー</button>
+        <button id="open-log-folder-button" class="button secondary" type="button">ログフォルダーを開く</button>
+      </div>
+      <pre id="log-output" class="log-output" tabindex="0">ログを読み込んでいます…</pre>
     </section>
   </main>
 

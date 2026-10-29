@@ -223,10 +223,11 @@ function queueResult(result) {
   if (result.dispense_after_animation) deferredResult = result;
   queuedResult = result;
   const elapsed = Date.now() - playingStartedAt;
+  const revealDelay = result.video ? 0 : Math.max(0, MIN_PLAYING_MS - elapsed);
   revealTimer = window.setTimeout(() => {
     if (queuedResult) revealResult(queuedResult);
     queuedResult = null;
-  }, Math.max(0, MIN_PLAYING_MS - elapsed));
+  }, revealDelay);
 }
 
 function showDispenseError() {

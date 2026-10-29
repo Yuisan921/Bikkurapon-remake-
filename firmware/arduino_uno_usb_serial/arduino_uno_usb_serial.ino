@@ -51,6 +51,7 @@ const unsigned long DEBOUNCE_MS = 300;
 const unsigned long SENSOR_BLOCK_CONFIRM_MS = 20;
 const unsigned long SENSOR_CLEAR_MS = 150;
 const unsigned long RESPONSE_TIMEOUT_MS = 3000;
+const unsigned long MANUAL_SERVO_TIMEOUT_MS = 2000;
 
 Servo servoA;
 Servo servoB;
@@ -61,6 +62,9 @@ unsigned long sensorBlockedSinceMs = 0;
 unsigned long sensorClearSinceMs = 0;
 bool coinArmed = true;
 int coinLightBaseline = 0;
+bool manualServoActive = false;
+String manualServoHopper = "";
+unsigned long manualServoLastCommandMs = 0;
 
 void setup() {
   Serial.begin(115200);
@@ -87,11 +91,25 @@ void loop() {
   if (Serial.available()) {
     String command = Serial.readStringUntil('\n');
     command.trim();
-    if (command.startsWith("RUN:")) {
+    if (command.startsWith("MANUAL:")) {
+      handleManualServoCommand(command);
+    } else if (command.startsWith("RUN:")) {
       handleTimedCommand(command);
     } else if (isTestCommand(command)) {
       dispenseIfWon(command);
     }
+  }
+
+  if (manualServoActive && millis() - manualServoLastCommandMs >= MANUAL_SERVO_TIMEOUT_MS) {
+    stopManualServos();
+    Serial.println("MANUAL:TIMEOUT");
+  }
+  if (manualServoActive) {
+    // 位置調整中の遮光をコインとして数えない。
+    sensorBlockedSinceMs = 0;
+    sensorClearSinceMs = 0;
+    delay(20);
+    return;
   }
 
   bool coinDetected = isCoinDetected();
@@ -161,6 +179,54 @@ bool isCoinDetected() {
     coinLightBaseline = (coinLightBaseline * 31L + reading) / 32L;
   }
   return blocked;
+}
+
+void startManualServo(const String &hopper) {
+  if (manualServoActive && manualServoHopper == hopper) {
+    manualServoLastCommandMs = millis();
+    return;
+  }
+
+  // 別側が動いていた場合も含め、必ず両方を止めてから選択側だけ動かす。
+  stopServo(servoA, SERVO_A_CONTINUOUS, SERVO_A_REST_ANGLE, SERVO_A_STOP_US);
+  stopServo(servoB, SERVO_B_CONTINUOUS, SERVO_B_REST_ANGLE, SERVO_B_STOP_US);
+  if (hopper == "A") {
+    if (SERVO_A_CONTINUOUS) servoA.writeMicroseconds(SERVO_A_RUN_US);
+    else servoA.write(SERVO_A_DISPENSE_ANGLE);
+  } else if (hopper == "B") {
+    if (SERVO_B_CONTINUOUS) servoB.writeMicroseconds(SERVO_B_RUN_US);
+    else servoB.write(SERVO_B_DISPENSE_ANGLE);
+  } else {
+    return;
+  }
+  manualServoActive = true;
+  manualServoHopper = hopper;
+  manualServoLastCommandMs = millis();
+}
+
+void stopManualServos() {
+  stopServo(servoA, SERVO_A_CONTINUOUS, SERVO_A_REST_ANGLE, SERVO_A_STOP_US);
+  stopServo(servoB, SERVO_B_CONTINUOUS, SERVO_B_REST_ANGLE, SERVO_B_STOP_US);
+  manualServoActive = false;
+  manualServoHopper = "";
+  manualServoLastCommandMs = 0;
+}
+
+void handleManualServoCommand(const String &command) {
+  // MANUAL:A:START / MANUAL:A:STOP（B側も同様）
+  int separator = command.indexOf(':', 7);
+  if (separator < 0) return;
+  String hopper = command.substring(7, separator);
+  String action = command.substring(separator + 1);
+  if (hopper != "A" && hopper != "B") return;
+
+  if (action == "START") {
+    startManualServo(hopper);
+    Serial.println("MANUAL:STARTED:" + hopper);
+  } else if (action == "STOP") {
+    stopManualServos();
+    Serial.println("MANUAL:STOPPED:" + hopper);
+  }
 }
 
 void handleCoinInserted() {

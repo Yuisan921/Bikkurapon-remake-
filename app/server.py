@@ -21,6 +21,7 @@ import threading
 import time
 import urllib.error
 import urllib.request
+from collections import deque
 from logging.handlers import RotatingFileHandler
 from urllib.parse import quote
 
@@ -40,6 +41,7 @@ logger = logging.getLogger(__name__)
 CONFIG_DIR = BASE_DIR / "config"
 DATA_DIR = BASE_DIR / "data"
 VIDEO_DIR = BASE_DIR / "videos"
+LOG_FILE = DATA_DIR / "bikkurapon.log"
 DATA_DIR.mkdir(parents=True, exist_ok=True)
 VIDEO_DIR.mkdir(parents=True, exist_ok=True)
 for video_group in ("atari", "hazure"):
@@ -51,7 +53,7 @@ VIDEO_EXTENSIONS = {".mp4", ".webm"}
 # 1ファイル1MB・3世代に制限し、文化祭のPCで容量が増え続けないようにする。
 try:
     file_handler = RotatingFileHandler(
-        DATA_DIR / "bikkurapon.log",
+        LOG_FILE,
         maxBytes=1_000_000,
         backupCount=3,
         encoding="utf-8",
@@ -361,6 +363,9 @@ _ADMIN_PATHS = {
     "/api/clear_admin_error",
     "/api/animation_finished",
     "/api/set_servo_timing",
+    "/api/manual_servo",
+    "/api/logs",
+    "/api/open_log_folder",
     "/api/open_video_folder",
     "/api/restock",
     "/api/set_stock",
@@ -382,7 +387,13 @@ def _valid_device_token():
 
 @app.before_request
 def restrict_remote_access():
-    local_only_paths = {"/api/animation_finished", "/api/open_video_folder"}
+    local_only_paths = {
+        "/api/animation_finished",
+        "/api/manual_servo",
+        "/api/logs",
+        "/api/open_log_folder",
+        "/api/open_video_folder",
+    }
     if request.path in local_only_paths and request.remote_addr not in _LOOPBACK_ADDRESSES:
         abort(403)
     if request.remote_addr in _LOOPBACK_ADDRESSES:
@@ -498,17 +509,45 @@ def api_demo_draw():
 @app.route("/api/open_video_folder", methods=["POST"])
 def api_open_video_folder():
     """管理画面から動画フォルダーをエクスプローラーで開く。"""
+    return open_local_folder(VIDEO_DIR, "動画")
+
+
+def open_local_folder(folder, label):
     try:
         if sys.platform == "win32":
-            getattr(os, "startfile")(str(VIDEO_DIR))
+            getattr(os, "startfile")(str(folder))
         elif sys.platform == "darwin":
-            subprocess.Popen(["open", str(VIDEO_DIR)])
+            subprocess.Popen(["open", str(folder)])
         else:
-            subprocess.Popen(["xdg-open", str(VIDEO_DIR)])
+            subprocess.Popen(["xdg-open", str(folder)])
     except (OSError, AttributeError) as exc:
-        logger.exception("動画フォルダーを開けませんでした")
-        return jsonify({"error": f"動画フォルダーを開けませんでした: {exc}"}), 500
-    return jsonify({"ok": True, "path": str(VIDEO_DIR)})
+        logger.exception("%sフォルダーを開けませんでした", label)
+        return jsonify({"error": f"{label}フォルダーを開けませんでした: {exc}"}), 500
+    return jsonify({"ok": True, "path": str(folder)})
+
+
+@app.route("/api/logs")
+def api_logs():
+    try:
+        requested_limit = int(request.args.get("limit", 200))
+    except (TypeError, ValueError):
+        requested_limit = 200
+    limit = max(20, min(500, requested_limit))
+    try:
+        with open(LOG_FILE, encoding="utf-8", errors="replace") as log_file:
+            visible_lines = (line for line in log_file if " /api/logs" not in line)
+            text = "".join(deque(visible_lines, maxlen=limit))
+    except FileNotFoundError:
+        text = ""
+    except OSError as exc:
+        logger.exception("ログを読み込めませんでした")
+        return jsonify({"error": f"ログを読み込めませんでした: {exc}"}), 500
+    return jsonify({"text": text, "path": str(LOG_FILE)})
+
+
+@app.route("/api/open_log_folder", methods=["POST"])
+def api_open_log_folder():
+    return open_local_folder(DATA_DIR, "ログ")
 
 
 def physical_draw_busy():
@@ -537,6 +576,20 @@ def api_set_servo_timing():
     settings["servo_run_ms"] = values
     save_settings()
     return jsonify({"servo_run_ms": values})
+
+
+@app.route("/api/manual_servo", methods=["POST"])
+def api_manual_servo():
+    payload = _json_payload()
+    hopper = str(payload.get("hopper", "")).lower()
+    action = str(payload.get("action", "")).lower()
+    if hopper not in {"a", "b"} or action not in {"start", "stop"}:
+        return jsonify({"error": "サーボと操作を正しく指定してください"}), 400
+    if serial_bridge is None or not serial_bridge.get_status().get("connected"):
+        return jsonify({"error": "Arduinoが接続されていません"}), 409
+    if not serial_bridge.set_manual_servo(hopper, action == "start"):
+        return jsonify({"error": "抽選・排出中のため手動操作できません"}), 409
+    return jsonify({"ok": True, "hopper": hopper, "active": action == "start"})
 
 
 @app.route("/api/hardware_test", methods=["POST"])

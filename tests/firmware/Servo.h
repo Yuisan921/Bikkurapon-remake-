@@ -8,6 +8,7 @@
 class String : public std::string {
  public:
   using std::string::string;
+  using std::string::operator=;
   String(const std::string &value) : std::string(value) {}
   String(unsigned long value) : std::string(std::to_string(value)) {}
   bool startsWith(const String &prefix) const { return rfind(prefix, 0) == 0; }
@@ -64,6 +65,9 @@ inline FakeSerial Serial;
 void handleCoinInserted();
 void calibrateCoinLight();
 bool isCoinDetected();
+void startManualServo(const String &);
+void stopManualServos();
+void handleManualServoCommand(const String &);
 String waitForResponse(const String &, unsigned long);
 bool isTestCommand(const String &);
 void dispenseIfWon(const String &);

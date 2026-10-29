@@ -203,6 +203,39 @@ def test_warns_when_cds_is_too_dark():
     assert bridge.get_status()["sensor"]["ok"] is False
 
 
+def test_manual_servo_runs_only_while_control_is_active():
+    bridge = SerialBridge("COM3", 115200, lambda: None)
+    fake = FakeSerial([], bridge._stop_event)
+    bridge._serial = fake
+
+    assert bridge.set_manual_servo("a", True) is True
+    assert bridge.get_status()["manual_hopper"] == "a"
+    assert bridge.get_status()["busy"] is True
+    assert bridge.request_hardware_test() is False
+    assert bridge.set_manual_servo("a", True) is True  # keepalive
+    assert bridge.set_manual_servo("a", False) is True
+
+    assert bridge.get_status()["manual_hopper"] is None
+    assert fake.written == [
+        "MANUAL:A:START\n",
+        "MANUAL:A:START\n",
+        "MANUAL:A:STOP\n",
+    ]
+
+
+def test_manual_servo_automatically_stops_when_keepalive_expires():
+    bridge = SerialBridge("COM3", 115200, lambda: None)
+    fake = FakeSerial([], bridge._stop_event)
+    bridge._serial = fake
+    assert bridge.set_manual_servo("b", True) is True
+    bridge._manual_deadline = 0
+
+    bridge._stop_expired_manual_control()
+
+    assert bridge.get_status()["manual_hopper"] is None
+    assert fake.written[-1] == "MANUAL:B:STOP\n"
+
+
 def test_hardware_test_uses_same_dispense_flow_as_coin():
     results = []
     bridge = SerialBridge(
