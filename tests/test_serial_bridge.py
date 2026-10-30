@@ -205,11 +205,11 @@ def test_warns_when_cds_is_too_dark():
 
 def test_reports_firmware_version_from_uno():
     bridge = SerialBridge("COM3", 115200, lambda: None)
-    bridge._serial = FakeSerial([b"FIRMWARE:2.7.1\n"], bridge._stop_event)
+    bridge._serial = FakeSerial([b"FIRMWARE:2.7.2\n"], bridge._stop_event)
 
     bridge._run()
 
-    assert bridge.get_status()["firmware_version"] == "2.7.1"
+    assert bridge.get_status()["firmware_version"] == "2.7.2"
 
 
 def test_reports_arduino_restart_during_dispense_as_power_problem():
@@ -224,7 +224,7 @@ def test_reports_arduino_restart_during_dispense_as_power_problem():
         ack_timeout=0.1,
     )
     bridge._serial = FakeSerial(
-        [b"COIN:4\n", b"FIRMWARE:2.7.1\n"], bridge._stop_event
+        [b"COIN:4\n", b"FIRMWARE:2.7.2\n"], bridge._stop_event
     )
 
     bridge._run()

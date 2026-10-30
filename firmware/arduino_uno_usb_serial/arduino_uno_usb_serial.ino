@@ -1,6 +1,6 @@
 #include <Servo.h>
 
-const char FIRMWARE_VERSION[] = "2.7.1";
+const char FIRMWARE_VERSION[] = "2.7.2";
 
 // コイン通路を挟んでLEDとCdSを向かい合わせ、コインが光を遮る変化を検知する。
 // LED: D4 -- 220〜330Ω -- LED -- GND
@@ -21,7 +21,9 @@ const int CDS_BLOCK_DROP_PERCENT = 25;
 const int CDS_BLOCK_MIN_DROP = 80;  // 0〜1023の読み値で最低限必要な差
 const int CDS_MIN_LIT_VALUE = 150;  // これ未満ならLED・CdS・抵抗の配線を確認
 
-const int SERVO_A_PIN = 9;   // 当たり
+// 実機でD9側だけ信号が出ない症状が確認されたため、当たり側は空いているD8を使う。
+// Servoライブラリがパルスを生成するのでPWM専用端子である必要はない。
+const int SERVO_A_PIN = 8;   // 当たり
 const int SERVO_B_PIN = 10;  // はずれ
 
 // 今回の連続回転サーボ用。通常の角度指定サーボを使う側だけ false に変更。
