@@ -203,6 +203,37 @@ def test_warns_when_cds_is_too_dark():
     assert bridge.get_status()["sensor"]["ok"] is False
 
 
+def test_reports_firmware_version_from_uno():
+    bridge = SerialBridge("COM3", 115200, lambda: None)
+    bridge._serial = FakeSerial([b"FIRMWARE:2.7.1\n"], bridge._stop_event)
+
+    bridge._run()
+
+    assert bridge.get_status()["firmware_version"] == "2.7.1"
+
+
+def test_reports_arduino_restart_during_dispense_as_power_problem():
+    results = []
+    bridge = SerialBridge(
+        "COM3",
+        115200,
+        lambda: _plan("reset-during-servo", "b"),
+        on_dispense_result=lambda reservation_id, success, error: results.append(
+            (reservation_id, success, error)
+        ),
+        ack_timeout=0.1,
+    )
+    bridge._serial = FakeSerial(
+        [b"COIN:4\n", b"FIRMWARE:2.7.1\n"], bridge._stop_event
+    )
+
+    bridge._run()
+
+    assert results[0][0:2] == ("reset-during-servo", False)
+    assert results[0][2]["code"] == "arduino_restarted_during_dispense"
+    assert "外部5V電源" in results[0][2]["detail"]
+
+
 def test_manual_servo_runs_only_while_control_is_active():
     bridge = SerialBridge("COM3", 115200, lambda: None)
     fake = FakeSerial([], bridge._stop_event)

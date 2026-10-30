@@ -21,7 +21,8 @@ int main() {
   const int stopA = SERVO_A_CONTINUOUS ? 1500 : 0;
   const int stopB = SERVO_B_CONTINUOUS ? 1500 : 0;
   const int runA = SERVO_A_CONTINUOUS ? 1600 : 90;
-  const int runB = SERVO_B_CONTINUOUS ? 1600 : 90;
+  const int runB = SERVO_B_CONTINUOUS ? 1400 : 90;
+  assert(Serial.outgoing.front() == "FIRMWARE:2.7.1");
   // Startup must send neutral, never a continuous rotation command.
   assert((servoA.angles == std::vector<int>{stopA}));
   assert((servoB.angles == std::vector<int>{stopB}));

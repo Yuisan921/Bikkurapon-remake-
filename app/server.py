@@ -535,7 +535,17 @@ def api_logs():
     limit = max(20, min(500, requested_limit))
     try:
         with open(LOG_FILE, encoding="utf-8", errors="replace") as log_file:
-            visible_lines = (line for line in log_file if " /api/logs" not in line)
+            quiet_requests = (
+                "GET /api/logs",
+                "GET /api/system_status",
+                "GET /api/status",
+                "GET /socket.io/",
+                "POST /socket.io/",
+            )
+            visible_lines = (
+                line for line in log_file
+                if not any(request_text in line for request_text in quiet_requests)
+            )
             text = "".join(deque(visible_lines, maxlen=limit))
     except FileNotFoundError:
         text = ""

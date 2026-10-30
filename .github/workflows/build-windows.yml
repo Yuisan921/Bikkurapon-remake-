@@ -120,9 +120,9 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          $tag = "v2.7.0"
+          $tag = "v2.7.1"
           $asset = "dist_installer\BikkurapoSetup.exe"
-          $firmware = "dist_installer\ArduinoUno-v2.7.0.zip"
+          $firmware = "dist_installer\ArduinoUno-v2.7.1.zip"
           Compress-Archive -Path "firmware\arduino_uno_usb_serial" -DestinationPath $firmware
           gh release view $tag *> $null
           if ($LASTEXITCODE -eq 0) {
@@ -130,8 +130,8 @@ jobs:
           } else {
             gh release create $tag $asset $firmware `
               --target "$env:GITHUB_SHA" `
-              --title "妖怪まつり びっくらぽん v2.7.0" `
-              --notes "管理画面に長押し式のサーボ手動位置調整と動作ログを追加しました。コイン検知後は結果動画をすぐ再生します。手動調整にはArduinoUno-v2.7.0.zipへの更新が必要です。"
+              --title "妖怪まつり びっくらぽん v2.7.1" `
+              --notes "はずれ側サーボを通常排出・長押し調整とも逆回転にしました。Arduinoの再起動や手動回転の確認をログへ詳しく表示します。PCアプリとArduinoUno-v2.7.1.zipの両方を更新してください。"
           }
 
   firmware:
@@ -152,13 +152,13 @@ jobs:
           done
       - name: Package Uno sketch and upload instructions
         working-directory: firmware
-        run: zip -r ../ArduinoUno-v2.7.0.zip arduino_uno_usb_serial
+        run: zip -r ../ArduinoUno-v2.7.1.zip arduino_uno_usb_serial
       - uses: actions/upload-artifact@v4
         with:
-          name: ArduinoUno-v2.7.0
-          path: ArduinoUno-v2.7.0.zip
+          name: ArduinoUno-v2.7.1
+          path: ArduinoUno-v2.7.1.zip
       - name: Publish firmware alongside compatible PC app
         if: ${{ inputs.publish_release }}
         env:
           GH_TOKEN: ${{ github.token }}
-        run: gh release upload v2.7.0 ArduinoUno-v2.7.0.zip
+        run: gh release upload v2.7.1 ArduinoUno-v2.7.1.zip

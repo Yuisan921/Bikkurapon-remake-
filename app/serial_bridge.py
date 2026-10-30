@@ -88,6 +88,7 @@ class SerialBridge:
         self._test_requested = threading.Event()
         self._draw_in_progress = threading.Event()
         self._sensor_status = None
+        self._firmware_version = None
         self._write_lock = threading.Lock()
         self._manual_lock = threading.Lock()
         self._manual_hopper = None
@@ -108,8 +109,43 @@ class SerialBridge:
                 or manual_hopper is not None
             ),
             "sensor": dict(self._sensor_status) if self._sensor_status else None,
+            "firmware_version": self._firmware_version,
             "manual_hopper": manual_hopper.lower() if manual_hopper else None,
         }
+
+    def _observe_device_status(self, line):
+        """Arduinoから届く状態通知を保存し、管理者向けログにも残す。"""
+        if line.startswith("FIRMWARE:"):
+            version = line.partition(":")[2].strip()
+            self._firmware_version = version or None
+            logger.info("Arduinoファームウェアを認識しました(version=%s)", version or "不明")
+            return True
+        if line.startswith("SENSOR:CDS:"):
+            try:
+                baseline = int(line.rsplit(":", 1)[1])
+            except ValueError:
+                logger.warning("CdS基準値を読み取れませんでした: %s", line)
+            else:
+                self._sensor_status = {
+                    "type": "cds",
+                    "baseline": baseline,
+                    "ok": baseline >= 150,
+                }
+                logger.info("CdSコインセンサーを認識しました(明るさ=%s)", baseline)
+            return True
+        if line == "SENSOR:DIGITAL":
+            self._sensor_status = {"type": "digital", "ok": True}
+            return True
+        if line.startswith("MANUAL:STARTED:"):
+            logger.info("Arduinoが手動回転の開始を確認しました(ホッパー%s)", line.rsplit(":", 1)[1])
+            return True
+        if line.startswith("MANUAL:STOPPED:"):
+            logger.info("Arduinoが手動回転の停止を確認しました(ホッパー%s)", line.rsplit(":", 1)[1])
+            return True
+        if line == "MANUAL:TIMEOUT":
+            logger.warning("Arduinoの安全機能が手動回転を自動停止しました")
+            return True
+        return False
 
     def start(self):
         if self.port:
@@ -170,20 +206,8 @@ class SerialBridge:
                     self._handle_coin(coin_id)
                 finally:
                     self._draw_in_progress.clear()
-            elif line.startswith("SENSOR:CDS:"):
-                try:
-                    baseline = int(line.rsplit(":", 1)[1])
-                except ValueError:
-                    logger.warning("CdS基準値を読み取れませんでした: %s", line)
-                else:
-                    self._sensor_status = {
-                        "type": "cds",
-                        "baseline": baseline,
-                        "ok": baseline >= 150,
-                    }
-                    logger.info("CdSコインセンサーを認識しました(明るさ=%s)", baseline)
-            elif line == "SENSOR:DIGITAL":
-                self._sensor_status = {"type": "digital", "ok": True}
+            elif self._observe_device_status(line):
+                continue
             else:
                 logger.debug("未知のシリアルメッセージ: %s", line)
 
@@ -300,6 +324,12 @@ class SerialBridge:
             self._serial = None
             return
 
+        logger.info(
+            "Arduinoへ排出命令を送信しました(ホッパー%s, 回転時間=%sms)",
+            hopper,
+            plan.get("run_ms", "既定"),
+        )
+
         success, error = self._wait_for_ack(ack_reservation_id, hopper)
         self._finish_dispense(reservation_id, success, error)
         if not success and self._serial is None:
@@ -330,6 +360,7 @@ class SerialBridge:
                     "detail": f"ホッパー{hopper}の動作完了を待っている途中でArduinoとの通信が切れました。USBケーブルとサーボ電源を確認してください。",
                 }
             if line == expected_done:
+                logger.info("Arduinoが排出完了を通知しました(ホッパー%s)", hopper)
                 return True, None
             if line == expected_failed:
                 return False, {
@@ -337,9 +368,21 @@ class SerialBridge:
                     "title": "Arduinoが排出失敗を通知しました",
                     "detail": f"ホッパー{hopper}を正常に動かせませんでした。カプセル詰まり、サーボ配線、外部5V電源を確認してください。",
                 }
+            if line.startswith("FIRMWARE:") or line.startswith("SENSOR:"):
+                self._observe_device_status(line)
+                logger.error("排出命令の直後にArduinoが再起動しました(ホッパー%s)", hopper)
+                return False, {
+                    "code": "arduino_restarted_during_dispense",
+                    "title": "サーボ動作時にArduinoが再起動しました",
+                    "detail": (
+                        f"ホッパー{hopper}を動かした瞬間にArduinoが再起動しました。"
+                        "サーボをArduinoの5V端子から給電せず、容量に余裕のある外部5V電源を使い、"
+                        "外部電源のマイナスとArduinoのGNDを共通にしてください。"
+                    ),
+                }
             if line:
                 logger.debug("排出確認中のメッセージ: %s", line)
-        logger.warning("ESP32から排出完了ACKが届きませんでした(reservation=%s)", reservation_id)
+        logger.warning("Arduinoから排出完了ACKが届きませんでした(reservation=%s)", reservation_id)
         return False, {
             "code": "ack_timeout",
             "title": "排出完了を確認できませんでした",
@@ -355,6 +398,7 @@ class SerialBridge:
                 pass
         self._serial = None
         self._sensor_status = None
+        self._firmware_version = None
         with self._manual_lock:
             self._manual_hopper = None
             self._manual_deadline = 0.0

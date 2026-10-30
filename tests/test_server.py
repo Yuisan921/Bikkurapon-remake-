@@ -244,7 +244,11 @@ def test_manual_servo_endpoint_rejects_invalid_and_remote_requests(server, monke
 def test_admin_can_read_recent_logs_but_remote_cannot(server, tmp_path, monkeypatch):
     log_file = tmp_path / "bikkurapon.log"
     log_file.write_text(
-        "old line\nGET /api/logs?limit=250 self line\ncoin detected\nservo stopped\n",
+        "old line\n"
+        "GET /api/logs?limit=250 self line\n"
+        "GET /api/system_status noisy poll\n"
+        "GET /api/status noisy poll\n"
+        "coin detected\nservo stopped\n",
         encoding="utf-8",
     )
     monkeypatch.setattr(server, "LOG_FILE", log_file)
@@ -257,6 +261,8 @@ def test_admin_can_read_recent_logs_but_remote_cannot(server, tmp_path, monkeypa
     assert "coin detected" in response.get_json()["text"]
     assert "servo stopped" in response.get_json()["text"]
     assert "/api/logs" not in response.get_json()["text"]
+    assert "/api/system_status" not in response.get_json()["text"]
+    assert "GET /api/status" not in response.get_json()["text"]
     assert client.get("/api/logs", environ_overrides=REMOTE).status_code == 403
 
 

@@ -1,5 +1,7 @@
 #include <Servo.h>
 
+const char FIRMWARE_VERSION[] = "2.7.1";
+
 // コイン通路を挟んでLEDとCdSを向かい合わせ、コインが光を遮る変化を検知する。
 // LED: D4 -- 220〜330Ω -- LED -- GND
 // CdS分圧: 5V -- CdS -- A0 -- 10kΩ -- GND
@@ -35,7 +37,9 @@ const int SERVO_B_PIN = 10;  // はずれ
 const int SERVO_A_STOP_US = 1500;
 const int SERVO_B_STOP_US = 1500;
 const int SERVO_A_RUN_US = 1600;
-const int SERVO_B_RUN_US = 1600;
+// はずれ側は機構が反対向きなので、停止値を挟んでA側と逆方向へ回す。
+// この値は通常排出と管理画面の長押し調整の両方に使われる。
+const int SERVO_B_RUN_US = 1400;
 // 実測0.3秒で約70度 → 半回転の目安は0.77秒。PC管理画面でも調整できる。
 const unsigned long SERVO_A_RUN_MS = 770;
 const unsigned long SERVO_B_RUN_MS = 770;
@@ -68,6 +72,7 @@ unsigned long manualServoLastCommandMs = 0;
 
 void setup() {
   Serial.begin(115200);
+  Serial.println("FIRMWARE:" + String(FIRMWARE_VERSION));
 
   if (COIN_SENSOR_USE_CDS) {
     pinMode(COIN_LED_PIN, OUTPUT);

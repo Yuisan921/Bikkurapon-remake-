@@ -476,9 +476,12 @@ async function loadSystemStatus() {
     if (hardware.connected) {
       const sensor = hardware.sensor;
       const portLabel = hardware.port || "USB";
+      const firmwareLabel = hardware.firmware_version
+        ? `・Arduino v${hardware.firmware_version}`
+        : "";
       if (sensor?.type === "cds") {
         hardwareTitle.textContent = sensor.ok ? "接続済み" : "接続済み（CdSが暗い）";
-        hardwareDetail.textContent = `${portLabel}・CdS明るさ ${sensor.baseline}`;
+        hardwareDetail.textContent = `${portLabel}${firmwareLabel}・CdS明るさ ${sensor.baseline}`;
         setCardState(hardwareCard, sensor.ok ? "good" : "warning");
       } else {
         hardwareTitle.textContent = "接続済み";
