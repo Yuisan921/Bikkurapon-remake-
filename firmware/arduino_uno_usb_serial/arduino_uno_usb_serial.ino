@@ -21,9 +21,7 @@ const int CDS_BLOCK_DROP_PERCENT = 25;
 const int CDS_BLOCK_MIN_DROP = 80;  // 0〜1023の読み値で最低限必要な差
 const int CDS_MIN_LIT_VALUE = 150;  // これ未満ならLED・CdS・抵抗の配線を確認
 
-// 実機でD9側だけ信号が出ない症状が確認されたため、当たり側は空いているD8を使う。
-// Servoライブラリがパルスを生成するのでPWM専用端子である必要はない。
-const int SERVO_A_PIN = 8;   // 当たり
+const int SERVO_A_PIN = 9;   // 当たり
 const int SERVO_B_PIN = 10;  // はずれ
 
 // 今回の連続回転サーボ用。通常の角度指定サーボを使う側だけ false に変更。
@@ -38,7 +36,8 @@ const int SERVO_B_PIN = 10;  // はずれ
 // 停止中にゆっくり動く個体はSTOP_USを5〜10ずつ調整する。
 const int SERVO_A_STOP_US = 1500;
 const int SERVO_B_STOP_US = 1500;
-const int SERVO_A_RUN_US = 1600;
+// 当たり側の個体では1600µsが停止帯に近く回らなかったため、1700µsへ広げる。
+const int SERVO_A_RUN_US = 1700;
 // はずれ側は機構が反対向きなので、停止値を挟んでA側と逆方向へ回す。
 // この値は通常排出と管理画面の長押し調整の両方に使われる。
 const int SERVO_B_RUN_US = 1400;

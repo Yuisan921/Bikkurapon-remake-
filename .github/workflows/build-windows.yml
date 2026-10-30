@@ -131,7 +131,7 @@ jobs:
             gh release create $tag $asset $firmware `
               --target "$env:GITHUB_SHA" `
               --title "妖怪まつり びっくらぽん v2.7.2" `
-              --notes "実機で動作しなかったD9を使わず、当たり側サーボの信号線をD8へ変更しました。はずれ側はD10のまま逆回転します。PCアプリとArduinoUno-v2.7.2.zipの両方を更新し、当たり側の信号線をD8へ差し替えてください。"
+              --notes "当たり側はD9のまま回転信号を1700µsへ強め、停止帯に入って動かない問題を修正しました。はずれ側はD10のまま逆方向の1400µsです。PCアプリとArduinoUno-v2.7.2.zipの両方を更新してください。"
           }
 
   firmware:
