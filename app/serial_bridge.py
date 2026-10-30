@@ -294,10 +294,19 @@ class SerialBridge:
                 logger.exception("演出完了待ちでエラーが発生しました")
                 ready = False
             if not ready or self._stop_event.is_set():
-                self._finish_dispense(reservation_id, False, {
-                    "code": "presentation_timeout", "title": "抽選画面の演出終了を確認できませんでした",
-                    "detail": "排出せずに抽選を取り消しました。ゲーム画面を開き、動画が最後まで再生できるか確認してください。",
-                })
+                if plan.get("cancelled_by_admin"):
+                    error = {
+                        "code": "presentation_cancelled",
+                        "title": "管理画面から処理を中止しました",
+                        "detail": "カプセルを排出せず、在庫も減らさずに待機状態を解除しました。",
+                    }
+                else:
+                    error = {
+                        "code": "presentation_timeout",
+                        "title": "抽選画面の演出終了を確認できませんでした",
+                        "detail": "排出せずに抽選を取り消しました。ゲーム画面を開き、動画が最後まで再生できるか確認してください。",
+                    }
+                self._finish_dispense(reservation_id, False, error)
                 return
             coin_id = None
         ack_reservation_id = reservation_id

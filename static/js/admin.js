@@ -25,6 +25,7 @@ const fullscreenButton = document.getElementById("fullscreen-button");
 const demoDrawButton = document.getElementById("demo-draw-button");
 const hardwareTestButton = document.getElementById("hardware-test-button");
 const hardwareTestDetail = document.getElementById("hardware-test-detail");
+const cancelHardwareButton = document.getElementById("cancel-hardware-button");
 const autoProbabilityToggle = document.getElementById("auto-probability-toggle");
 const servoTimingForm = document.getElementById("servo-timing-form");
 const servoTimeA = document.getElementById("servo-time-a");
@@ -147,6 +148,19 @@ openVideoFolderButton.addEventListener("click", async () => {
     notify(error.message, true);
   } finally {
     openVideoFolderButton.disabled = false;
+  }
+});
+
+cancelHardwareButton.addEventListener("click", async () => {
+  if (!window.confirm("待機中の抽選を中止します。カプセルは排出せず、在庫も減りません。")) return;
+  cancelHardwareButton.disabled = true;
+  try {
+    await requestJson("/api/cancel_pending_draw", { method: "POST" });
+    notify("待機中の処理を中止しました");
+  } catch (error) {
+    notify(error.message, true);
+  } finally {
+    window.setTimeout(loadSystemStatus, 400);
   }
 });
 
@@ -495,9 +509,13 @@ async function loadSystemStatus() {
         ? (data.ready ? "本番OK" : "在庫を確認")
         : "CdSを確認";
       hardwareTestButton.disabled = Boolean(hardware.busy);
-      hardwareTestDetail.textContent = hardware.busy
-        ? "抽選・排出を確認中です"
+      hardwareTestDetail.textContent = hardware.busy_reason === "presentation"
+        ? "動画の終了通知を待っています"
+        : hardware.busy
+          ? "抽選・排出を確認中です"
         : "本番と同じ抽選・排出・在庫更新を確認";
+      cancelHardwareButton.hidden = !data.can_cancel_pending_draw;
+      if (!data.can_cancel_pending_draw) cancelHardwareButton.disabled = false;
       manualServoButtons.forEach((button) => {
         const isThisManualServo = hardware.manual_hopper === button.dataset.hopper;
         button.disabled = Boolean(hardware.busy && !isThisManualServo);
@@ -512,6 +530,7 @@ async function loadSystemStatus() {
       headerStatus.querySelector("b").textContent = "要確認";
       hardwareTestButton.disabled = true;
       hardwareTestDetail.textContent = "Arduinoの接続を待っています";
+      cancelHardwareButton.hidden = true;
       manualServoButtons.forEach((button) => {
         button.disabled = true;
         button.classList.remove("is-running");

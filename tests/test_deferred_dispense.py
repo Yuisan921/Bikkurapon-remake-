@@ -96,6 +96,45 @@ def test_missing_animation_completion_cancels_without_dispensing(server, monkeyp
     assert server.get_last_admin_error()["code"] == "presentation_timeout"
 
 
+def test_admin_can_cancel_stuck_animation_without_dispensing_or_using_stock(server, monkeypatch):
+    bridge = make_bridge(server)
+    shown = threading.Event()
+
+    def emit(name, _data):
+        if name == "draw_result":
+            shown.set()
+
+    monkeypatch.setattr(server.socketio, "emit", emit)
+    worker = threading.Thread(target=bridge._handle_coin, args=("1",))
+    worker.start()
+    try:
+        assert shown.wait(1)
+        client = server.app.test_client()
+        status = client.get("/api/system_status").get_json()
+        assert status["hardware"]["busy_reason"] == "presentation"
+        assert status["can_cancel_pending_draw"] is True
+
+        response = client.post("/api/cancel_pending_draw")
+        assert response.status_code == 200
+    finally:
+        worker.join(3)
+
+    assert not worker.is_alive()
+    assert bridge._serial.written == ["NONE:1\n"]
+    assert json.loads(server.lottery.stock_data_path.read_text())["atari"] == 2
+    assert server.get_last_admin_error()["code"] == "presentation_cancelled"
+    assert client.post("/api/cancel_pending_draw").status_code == 409
+
+
+def test_remote_cannot_cancel_pending_draw(server, monkeypatch):
+    monkeypatch.setitem(server.settings, "allow_remote_admin", True)
+    response = server.app.test_client().post(
+        "/api/cancel_pending_draw",
+        environ_overrides={"REMOTE_ADDR": "192.168.1.50"},
+    )
+    assert response.status_code == 403
+
+
 def test_remote_cannot_finish_animation_even_when_remote_admin_enabled(server, monkeypatch):
     monkeypatch.setitem(server.settings, "allow_remote_admin", True)
     response = server.app.test_client().post("/api/animation_finished", json={"reservation_id": "id"},

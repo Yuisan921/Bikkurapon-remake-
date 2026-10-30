@@ -270,11 +270,15 @@ def servo_run_times():
 
 
 def wait_for_presentation(plan):
-    return presentation_gate.wait(
+    ready = presentation_gate.wait(
         plan["reservation_id"],
         lambda: socketio.emit("draw_result", {**plan, "dispense_after_animation": True}),
         PRESENTATION_TIMEOUT_SECONDS,
     )
+    if presentation_gate.consume_cancelled(plan["reservation_id"]):
+        plan["cancelled_by_admin"] = True
+        return False
+    return ready
 
 
 def handle_serial_dispense_result(reservation_id, success, error=None):
@@ -360,6 +364,7 @@ _ADMIN_PATHS = {
     "/api/preview_result",
     "/api/demo_draw",
     "/api/hardware_test",
+    "/api/cancel_pending_draw",
     "/api/clear_admin_error",
     "/api/animation_finished",
     "/api/set_servo_timing",
@@ -390,6 +395,7 @@ def restrict_remote_access():
     local_only_paths = {
         "/api/animation_finished",
         "/api/manual_servo",
+        "/api/cancel_pending_draw",
         "/api/logs",
         "/api/open_log_folder",
         "/api/open_video_folder",
@@ -456,8 +462,12 @@ def api_system_status():
             "connected": False,
             "port": None if port_setting == "auto" else port_setting,
         }
+    presentation_busy = presentation_gate.busy
+    if presentation_busy:
+        hardware = {**hardware, "busy": True, "busy_reason": "presentation"}
     return jsonify({
         "hardware": hardware,
+        "can_cancel_pending_draw": presentation_busy,
         "ready": lottery.has_stock(),
         "auto_probability_by_stock": lottery.auto_probability_by_stock,
         "last_error": get_last_admin_error(),
@@ -571,6 +581,17 @@ def api_animation_finished():
     reservation_id = _field(_json_payload(), "reservation_id", str)
     if not presentation_gate.complete(reservation_id):
         return jsonify({"error": "この抽選は終了したか、取り消されました"}), 409
+    return jsonify({"ok": True})
+
+
+@app.route("/api/cancel_pending_draw", methods=["POST"])
+def api_cancel_pending_draw():
+    """演出終了待ちで固まった抽選を、排出・在庫更新せずに解除する。"""
+    reservation_id = presentation_gate.cancel()
+    if reservation_id is None:
+        return jsonify({"error": "中止できる処理はありません"}), 409
+    logger.warning("管理画面から演出待ちを中止しました(reservation=%s)", reservation_id)
+    socketio.emit("draw_cancelled", {})
     return jsonify({"ok": True})
 
 
