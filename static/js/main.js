@@ -36,6 +36,7 @@ let rouletteTimer = null;
 let captionTimer = null;
 let revealTimer = null;
 let resetTimer = null;
+let videoStartTimer = null;
 let queuedResult = null;
 let deferredResult = null;
 let completionSent = false;
@@ -91,18 +92,20 @@ function showScreen(name) {
 }
 
 function clearAnimationTimers() {
-  [rouletteTimer, captionTimer, revealTimer, resetTimer].forEach((timer) => {
+  [rouletteTimer, captionTimer, revealTimer, resetTimer, videoStartTimer].forEach((timer) => {
     if (timer) window.clearInterval(timer);
   });
   rouletteTimer = null;
   captionTimer = null;
   revealTimer = null;
   resetTimer = null;
+  videoStartTimer = null;
 }
 
 function resetResultVideo() {
   resultVideo.onerror = null;
   resultVideo.onended = null;
+  resultVideo.onplaying = null;
   resultVideo.pause();
   resultVideo.removeAttribute("src");
   resultVideo.load();
@@ -199,23 +202,69 @@ function revealResult(result) {
     return;
   }
 
-  stage.className = "state-video";
-  screens.video.classList.toggle("is-preview", Boolean(result.preview));
-  showScreen("video");
-  let fellBack = false;
-  const fallback = () => {
-    if (fellBack) return;
-    fellBack = true;
-    showFallbackResult(result);
+  const sources = [result.video, ...(result.video_fallbacks || [])]
+    .filter((source, index, all) => source && all.indexOf(source) === index);
+  let sourceIndex = 0;
+  let sourceAttempt = 0;
+  const failures = [];
+
+  const reportFailure = () => {
+    fetch("/api/report_display_error", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        group: result.id || result.hopper || "不明",
+        sources,
+        reason: failures.join(" / "),
+      }),
+    }).catch(() => {});
   };
-  resultVideo.onerror = fallback;
-  resultVideo.onended = () => {
-    finishPresentation(result);
+
+  const playNext = () => {
+    if (sourceIndex >= sources.length) {
+      reportFailure();
+      showFallbackResult(result);
+      return;
+    }
+
+    stage.className = "state-video";
+    screens.video.classList.toggle("is-preview", Boolean(result.preview));
+    showScreen("video");
+    const source = sources[sourceIndex];
+    sourceIndex += 1;
+    const attempt = ++sourceAttempt;
+
+    const failed = (reason) => {
+      if (attempt !== sourceAttempt) return;
+      sourceAttempt += 1;
+      window.clearTimeout(videoStartTimer);
+      videoStartTimer = null;
+      failures.push(`${source}: ${reason}`);
+      resultVideo.pause();
+      resultVideo.removeAttribute("src");
+      resultVideo.load();
+      playNext();
+    };
+
+    resultVideo.onerror = () => {
+      const code = resultVideo.error?.code || "不明";
+      failed(`読込エラー(code=${code})`);
+    };
+    resultVideo.onplaying = () => {
+      window.clearTimeout(videoStartTimer);
+      videoStartTimer = null;
+    };
+    resultVideo.onended = () => finishPresentation(result);
+    resultVideo.src = source;
+    resultVideo.load();
+    videoStartTimer = window.setTimeout(() => failed("8秒以内に再生開始しませんでした"), 8000);
+    const playback = resultVideo.play();
+    if (playback) {
+      playback.catch((error) => failed(`${error?.name || "再生拒否"}: ${error?.message || ""}`));
+    }
   };
-  resultVideo.src = result.video;
-  resultVideo.load();
-  const playback = resultVideo.play();
-  if (playback) playback.catch(fallback);
+
+  playNext();
 }
 
 function queueResult(result) {

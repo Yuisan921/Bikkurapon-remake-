@@ -130,8 +130,12 @@ def select_result_video(result):
         # 旧方式の videos/atari.mp4・hazure.mp4 と独自設定をそのまま使える。
         return dict(result)
     selected = random.choice(candidates)
-    relative_url = quote(selected.relative_to(VIDEO_DIR).as_posix())
-    return {**result, "video": f"/media/{relative_url}"}
+    ordered = [selected, *(path for path in candidates if path != selected)]
+    urls = [
+        f"/media/{quote(path.relative_to(VIDEO_DIR).as_posix())}"
+        for path in ordered
+    ]
+    return {**result, "video": urls[0], "video_fallbacks": urls[1:]}
 
 
 def video_library_status():
@@ -365,6 +369,7 @@ _ADMIN_PATHS = {
     "/api/demo_draw",
     "/api/hardware_test",
     "/api/cancel_pending_draw",
+    "/api/report_display_error",
     "/api/clear_admin_error",
     "/api/animation_finished",
     "/api/set_servo_timing",
@@ -396,6 +401,7 @@ def restrict_remote_access():
         "/api/animation_finished",
         "/api/manual_servo",
         "/api/cancel_pending_draw",
+        "/api/report_display_error",
         "/api/logs",
         "/api/open_log_folder",
         "/api/open_video_folder",
@@ -592,6 +598,29 @@ def api_cancel_pending_draw():
         return jsonify({"error": "中止できる処理はありません"}), 409
     logger.warning("管理画面から演出待ちを中止しました(reservation=%s)", reservation_id)
     socketio.emit("draw_cancelled", {})
+    return jsonify({"ok": True})
+
+
+@app.route("/api/report_display_error", methods=["POST"])
+def api_report_display_error():
+    """演出画面で全動画の再生に失敗した理由を管理画面へ伝える。"""
+    payload = _json_payload()
+    group = str(payload.get("group", "不明"))[:30]
+    sources = payload.get("sources", [])
+    if not isinstance(sources, list):
+        sources = []
+    source_names = ", ".join(str(source)[:160] for source in sources[:10]) or "不明"
+    reason = str(payload.get("reason", "ブラウザーが再生を開始できませんでした"))[:500]
+    reported = report_admin_error({
+        "code": "video_playback_failed",
+        "title": "抽選動画を再生できませんでした",
+        "detail": (
+            f"{group}側の動画を再生できないため通常結果画面へ切り替えました。"
+            f"対象: {source_names} / 理由: {reason}。"
+            "MP4はH.264映像・AAC音声で書き出してください。"
+        ),
+    })
+    logger.error("抽選動画の再生に失敗しました: %s", reported["detail"])
     return jsonify({"ok": True})
 
 

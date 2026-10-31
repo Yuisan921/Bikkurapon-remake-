@@ -101,6 +101,9 @@ def open_windows(base_url, settings):
         f"--user-data-dir={_profile_dir('display')}",
         "--no-first-run",
         "--no-default-browser-check",
+        # コイン検知は画面クリックではないため、通常の自動再生制限だと
+        # 音声付き抽選動画が拒否される。専用の演出画面だけ許可する。
+        "--autoplay-policy=no-user-gesture-required",
         f"--app={display_url}",
     ]
     if settings.get("kiosk_mode", False):

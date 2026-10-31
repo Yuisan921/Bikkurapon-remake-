@@ -21,7 +21,9 @@ def test_selects_only_supported_video_from_matching_result_folder(server, tmp_pa
     loser = server.select_result_video({"id": "hazure", "hopper": "b", "video": "/old.mp4"})
 
     assert unquote(winner["video"]) == "/media/atari/当たり二.webm"
+    assert [unquote(url) for url in winner["video_fallbacks"]] == ["/media/atari/one.mp4"]
     assert unquote(loser["video"]) == "/media/hazure/lose.mp4"
+    assert loser["video_fallbacks"] == []
     assert server.video_library_status() == {
         "path": str(tmp_path),
         "atari": 2,
@@ -73,3 +75,24 @@ def test_open_video_folder_is_local_only(server, tmp_path, monkeypatch):
         environ_overrides={"REMOTE_ADDR": "192.168.1.50"},
     )
     assert remote.status_code == 403
+
+
+def test_display_video_error_is_shown_to_admin_and_is_local_only(server, monkeypatch):
+    monkeypatch.setitem(server.settings, "allow_remote_admin", True)
+    client = server.app.test_client()
+    response = client.post("/api/report_display_error", json={
+        "group": "hazure",
+        "sources": ["/media/hazure/bad.mp4"],
+        "reason": "NotSupportedError",
+    })
+
+    assert response.status_code == 200
+    error = server.get_last_admin_error()
+    assert error["code"] == "video_playback_failed"
+    assert "bad.mp4" in error["detail"]
+    assert "H.264" in error["detail"]
+    assert client.post(
+        "/api/report_display_error",
+        json={},
+        environ_overrides={"REMOTE_ADDR": "192.168.1.50"},
+    ).status_code == 403

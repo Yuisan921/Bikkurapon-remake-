@@ -120,7 +120,7 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          $tag = "v2.7.3"
+          $tag = "v2.7.4"
           $asset = "dist_installer\BikkurapoSetup.exe"
           $firmware = "dist_installer\ArduinoUno-v2.7.2.zip"
           Compress-Archive -Path "firmware\arduino_uno_usb_serial" -DestinationPath $firmware
@@ -130,8 +130,8 @@ jobs:
           } else {
             gh release create $tag $asset $firmware `
               --target "$env:GITHUB_SHA" `
-              --title "妖怪まつり びっくらぽん v2.7.3" `
-              --notes "演出終了待ちで操作がグレーアウトした場合に、管理画面から在庫を減らさず安全に中止・解除できるボタンを追加しました。Arduinoはv2.7.2のままで更新不要です。"
+              --title "妖怪まつり びっくらぽん v2.7.4" `
+              --notes "音付き抽選動画の自動再生を許可し、選んだ動画が再生できない場合は同じフォルダーの別動画を自動で試すようにしました。全動画が失敗した場合は管理画面へファイル名と原因を表示します。Arduinoはv2.7.2のままで更新不要です。"
           }
 
   firmware:
@@ -161,4 +161,4 @@ jobs:
         if: ${{ inputs.publish_release }}
         env:
           GH_TOKEN: ${{ github.token }}
-        run: gh release upload v2.7.3 ArduinoUno-v2.7.2.zip
+        run: gh release upload v2.7.4 ArduinoUno-v2.7.2.zip

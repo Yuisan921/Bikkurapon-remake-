@@ -18,7 +18,9 @@ def test_opens_edge_app_windows_without_browser_navigation(monkeypatch, tmp_path
 
     assert len(launched) == 2
     assert "--app=http://127.0.0.1:5000/" in launched[0]
+    assert "--autoplay-policy=no-user-gesture-required" in launched[0]
     assert "--app=http://127.0.0.1:5000/admin" in launched[1]
+    assert "--autoplay-policy=no-user-gesture-required" not in launched[1]
     assert "--new-window" not in launched[0]
 
 
